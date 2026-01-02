@@ -60,21 +60,25 @@ export function AIPanel({ settings, code, selectedText, onCodeUpdate, onAddMessa
     };
     onAddMessage(userMessage);
 
+    let fullResponse = '';
+
     try {
-      const result = await sendAIRequest({
+      await sendAIRequest({
         provider: selectedProvider,
         action: selectedAction,
         userMessage: prompt,
         code,
         selectedText,
         settings,
+        onChunk: (chunk) => {
+          fullResponse += chunk;
+          setResponse(fullResponse);
+        },
       });
-
-      setResponse(result);
 
       const assistantMessage: AIMessage = {
         role: 'assistant',
-        content: result,
+        content: fullResponse,
         provider: selectedProvider,
         action: selectedAction,
         timestamp: new Date(),
@@ -83,9 +87,8 @@ export function AIPanel({ settings, code, selectedText, onCodeUpdate, onAddMessa
 
       // Auto-apply code for certain actions
       if (selectedAction === 'generate' || selectedAction === 'modify' || selectedAction === 'fix') {
-        const extractedCode = extractCodeFromResponse(result);
-        if (extractedCode && extractedCode !== result) {
-          // Only auto-apply if we successfully extracted code
+        const extractedCode = extractCodeFromResponse(fullResponse);
+        if (extractedCode && extractedCode !== fullResponse) {
           onCodeUpdate(extractedCode);
         }
       }

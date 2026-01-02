@@ -17,6 +17,7 @@ interface AIRequestConfig {
   code?: string;
   selectedText?: string;
   settings: AppSettings;
+  onChunk?: (chunk: string) => void;
 }
 
 interface ClaudeMessage {
@@ -25,7 +26,7 @@ interface ClaudeMessage {
 }
 
 export async function sendAIRequest(config: AIRequestConfig): Promise<string> {
-  const { provider, action, userMessage, code, selectedText, settings } = config;
+  const { provider, action, userMessage, code, selectedText, settings, onChunk } = config;
   const providerConfig = settings.providers[provider];
   
   if (!providerConfig.apiKey) {
@@ -44,21 +45,22 @@ export async function sendAIRequest(config: AIRequestConfig): Promise<string> {
   
   switch (provider) {
     case 'claude':
-      return sendClaudeRequest(providerConfig.apiKey, providerConfig.model, systemPrompt, fullMessage);
+      return streamClaudeRequest(providerConfig.apiKey, providerConfig.model, systemPrompt, fullMessage, onChunk);
     case 'gemini':
-      return sendGeminiRequest(providerConfig.apiKey, providerConfig.model, systemPrompt, fullMessage);
+      return streamGeminiRequest(providerConfig.apiKey, providerConfig.model, systemPrompt, fullMessage, onChunk);
     case 'openai':
-      return sendOpenAIRequest(providerConfig.apiKey, providerConfig.model, systemPrompt, fullMessage);
+      return streamOpenAIRequest(providerConfig.apiKey, providerConfig.model, systemPrompt, fullMessage, onChunk);
     default:
       throw new Error(`Unknown provider: ${provider}`);
   }
 }
 
-async function sendClaudeRequest(
+async function streamClaudeRequest(
   apiKey: string, 
   model: string, 
   systemPrompt: string, 
-  userMessage: string
+  userMessage: string,
+  onChunk?: (chunk: string) => void
 ): Promise<string> {
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -73,6 +75,7 @@ async function sendClaudeRequest(
       max_tokens: 4096,
       system: systemPrompt,
       messages: [{ role: 'user', content: userMessage }] as ClaudeMessage[],
+      stream: true,
     }),
   });
   
@@ -80,19 +83,50 @@ async function sendClaudeRequest(
     const error = await response.json();
     throw new Error(error.error?.message || 'Claude API request failed');
   }
-  
-  const data = await response.json();
-  return data.content[0].text;
+
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('No response body');
+
+  const decoder = new TextDecoder();
+  let fullText = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    const chunk = decoder.decode(value, { stream: true });
+    const lines = chunk.split('\n');
+
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        const data = line.slice(6);
+        if (data === '[DONE]') continue;
+        
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
+            fullText += parsed.delta.text;
+            onChunk?.(parsed.delta.text);
+          }
+        } catch {
+          // Skip invalid JSON
+        }
+      }
+    }
+  }
+
+  return fullText;
 }
 
-async function sendGeminiRequest(
+async function streamGeminiRequest(
   apiKey: string, 
   model: string, 
   systemPrompt: string, 
-  userMessage: string
+  userMessage: string,
+  onChunk?: (chunk: string) => void
 ): Promise<string> {
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${apiKey}&alt=sse`,
     {
       method: 'POST',
       headers: {
@@ -116,16 +150,47 @@ async function sendGeminiRequest(
     const error = await response.json();
     throw new Error(error.error?.message || 'Gemini API request failed');
   }
-  
-  const data = await response.json();
-  return data.candidates[0].content.parts[0].text;
+
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('No response body');
+
+  const decoder = new TextDecoder();
+  let fullText = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    const chunk = decoder.decode(value, { stream: true });
+    const lines = chunk.split('\n');
+
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        const data = line.slice(6);
+        
+        try {
+          const parsed = JSON.parse(data);
+          const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (text) {
+            fullText += text;
+            onChunk?.(text);
+          }
+        } catch {
+          // Skip invalid JSON
+        }
+      }
+    }
+  }
+
+  return fullText;
 }
 
-async function sendOpenAIRequest(
+async function streamOpenAIRequest(
   apiKey: string, 
   model: string, 
   systemPrompt: string, 
-  userMessage: string
+  userMessage: string,
+  onChunk?: (chunk: string) => void
 ): Promise<string> {
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -140,6 +205,7 @@ async function sendOpenAIRequest(
         { role: 'user', content: userMessage },
       ],
       max_tokens: 4096,
+      stream: true,
     }),
   });
   
@@ -147,9 +213,40 @@ async function sendOpenAIRequest(
     const error = await response.json();
     throw new Error(error.error?.message || 'OpenAI API request failed');
   }
-  
-  const data = await response.json();
-  return data.choices[0].message.content;
+
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('No response body');
+
+  const decoder = new TextDecoder();
+  let fullText = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    const chunk = decoder.decode(value, { stream: true });
+    const lines = chunk.split('\n');
+
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        const data = line.slice(6);
+        if (data === '[DONE]') continue;
+        
+        try {
+          const parsed = JSON.parse(data);
+          const content = parsed.choices?.[0]?.delta?.content;
+          if (content) {
+            fullText += content;
+            onChunk?.(content);
+          }
+        } catch {
+          // Skip invalid JSON
+        }
+      }
+    }
+  }
+
+  return fullText;
 }
 
 export function extractCodeFromResponse(response: string): string {
