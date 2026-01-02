@@ -9,6 +9,7 @@ import { AIPanel } from '@/components/AIPanel';
 import { SettingsPanel } from '@/components/SettingsPanel';
 import { STLUploader } from '@/components/STLUploader';
 import { useSettings } from '@/hooks/useSettings';
+import { useScadPreview } from '@/hooks/useScadPreview';
 import { OPENSCAD_TEMPLATE, AIMessage, STLMesh } from '@/types/openscad';
 
 export default function Index() {
@@ -18,6 +19,9 @@ export default function Index() {
   const [meshData, setMeshData] = useState<STLMesh | null>(null);
   const [messages, setMessages] = useState<AIMessage[]>([]);
   const [showAIPanel, setShowAIPanel] = useState(true);
+  
+  // Auto-render SCAD preview with 500ms debounce
+  const { parsedScad, isRendering } = useScadPreview(code, 500);
 
   const handleAddMessage = useCallback((message: AIMessage) => {
     setMessages(prev => [...prev, message]);
@@ -99,7 +103,7 @@ export default function Index() {
                 )}
               </div>
               <div className="relative flex-1 p-2">
-                <ModelViewer meshData={meshData} />
+                <ModelViewer meshData={meshData} parsedScad={parsedScad} isRendering={isRendering} />
               </div>
             </div>
           </ResizablePanel>
