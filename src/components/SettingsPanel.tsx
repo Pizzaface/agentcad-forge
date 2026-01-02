@@ -141,7 +141,9 @@ export function SettingsPanel({
                 Loading models...
               </span>
             ) : (
-              <SelectValue />
+              <SelectValue>
+                {models[provider].find(m => m.value === settings.providers[provider].model)?.label || settings.providers[provider].model}
+              </SelectValue>
             )}
           </SelectTrigger>
           <SelectContent>
