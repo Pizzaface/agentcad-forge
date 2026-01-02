@@ -18,9 +18,9 @@ const FALLBACK_MODELS: Record<AIProvider, ModelInfo[]> = {
     { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
   ],
   openai: [
-    { value: 'gpt-4o', label: 'GPT-4o' },
-    { value: 'gpt-4o-mini', label: 'GPT-4o Mini' },
-    { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
+    { value: 'gpt-5', label: 'GPT-5' },
+    { value: 'gpt-5-mini', label: 'GPT-5 Mini' },
+    { value: 'gpt-5-nano', label: 'GPT-5 Nano' },
   ],
 };
 
@@ -110,20 +110,22 @@ export async function fetchOpenAIModels(apiKey: string): Promise<ModelInfo[]> {
     const data = await response.json();
     const models: ModelInfo[] = data.data
       .filter((m: any) => 
-        (m.id.startsWith('gpt-4') || m.id.startsWith('gpt-3.5')) &&
-        !m.id.includes('instruct') &&
-        !m.id.includes('vision') &&
-        !m.id.includes('realtime')
+        m.id.startsWith('gpt-5') &&
+        !m.id.includes('audio') &&
+        !m.id.includes('realtime') &&
+        !m.id.includes('tts')
       )
       .map((m: any) => ({
         value: m.id,
-        label: formatModelName(m.id, 'openai'),
+        label: m.id,
       }))
       .sort((a: ModelInfo, b: ModelInfo) => {
-        // Prioritize gpt-4o, then gpt-4, then gpt-3.5
-        if (a.value.includes('gpt-4o') && !b.value.includes('gpt-4o')) return -1;
-        if (!a.value.includes('gpt-4o') && b.value.includes('gpt-4o')) return 1;
-        return b.value.localeCompare(a.value);
+        // Prioritize base gpt-5, then mini, then nano
+        if (a.value === 'gpt-5') return -1;
+        if (b.value === 'gpt-5') return 1;
+        if (a.value.includes('mini') && !b.value.includes('mini')) return -1;
+        if (!a.value.includes('mini') && b.value.includes('mini')) return 1;
+        return a.value.localeCompare(b.value);
       });
     
     return models.length > 0 ? models : FALLBACK_MODELS.openai;

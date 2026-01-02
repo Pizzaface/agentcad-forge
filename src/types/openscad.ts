@@ -52,7 +52,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   providers: {
     claude: { apiKey: '', model: 'claude-sonnet-4-20250514' },
     gemini: { apiKey: '', model: 'gemini-2.5-flash' },
-    openai: { apiKey: '', model: 'gpt-4o' },
+    openai: { apiKey: '', model: 'gpt-5' },
   },
   defaultProvider: 'claude',
   editorFontSize: 14,
