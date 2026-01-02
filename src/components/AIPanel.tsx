@@ -1,0 +1,235 @@
+import { useState, useCallback } from 'react';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Sparkles, Pencil, BookOpen, Wrench, Send, Loader2 } from 'lucide-react';
+import { AIProvider, AIAction, AIMessage, AppSettings, AI_ACTIONS } from '@/types/openscad';
+import { sendAIRequest, extractCodeFromResponse } from '@/lib/ai-service';
+import { cn } from '@/lib/utils';
+
+interface AIPanelProps {
+  settings: AppSettings;
+  code: string;
+  selectedText: string;
+  onCodeUpdate: (code: string) => void;
+  onAddMessage: (message: AIMessage) => void;
+}
+
+const PROVIDER_ICONS: Record<AIProvider, string> = {
+  claude: '🟠',
+  gemini: '🔵',
+  openai: '🟢',
+};
+
+const PROVIDER_NAMES: Record<AIProvider, string> = {
+  claude: 'Claude',
+  gemini: 'Gemini',
+  openai: 'OpenAI',
+};
+
+const ACTION_ICONS: Record<AIAction, React.ReactNode> = {
+  generate: <Sparkles className="h-4 w-4" />,
+  modify: <Pencil className="h-4 w-4" />,
+  explain: <BookOpen className="h-4 w-4" />,
+  fix: <Wrench className="h-4 w-4" />,
+};
+
+export function AIPanel({ settings, code, selectedText, onCodeUpdate, onAddMessage }: AIPanelProps) {
+  const [selectedProvider, setSelectedProvider] = useState<AIProvider>(settings.defaultProvider);
+  const [selectedAction, setSelectedAction] = useState<AIAction>('generate');
+  const [prompt, setPrompt] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [response, setResponse] = useState<string>('');
+
+  const hasApiKey = settings.providers[selectedProvider].apiKey.length > 0;
+
+  const handleSubmit = useCallback(async () => {
+    if (!prompt.trim() || isLoading) return;
+
+    setIsLoading(true);
+    setResponse('');
+
+    const userMessage: AIMessage = {
+      role: 'user',
+      content: prompt,
+      provider: selectedProvider,
+      action: selectedAction,
+      timestamp: new Date(),
+    };
+    onAddMessage(userMessage);
+
+    try {
+      const result = await sendAIRequest({
+        provider: selectedProvider,
+        action: selectedAction,
+        userMessage: prompt,
+        code,
+        selectedText,
+        settings,
+      });
+
+      setResponse(result);
+
+      const assistantMessage: AIMessage = {
+        role: 'assistant',
+        content: result,
+        provider: selectedProvider,
+        action: selectedAction,
+        timestamp: new Date(),
+      };
+      onAddMessage(assistantMessage);
+
+      // Auto-apply code for certain actions
+      if (selectedAction === 'generate' || selectedAction === 'modify' || selectedAction === 'fix') {
+        const extractedCode = extractCodeFromResponse(result);
+        if (extractedCode && extractedCode !== result) {
+          // Only auto-apply if we successfully extracted code
+          onCodeUpdate(extractedCode);
+        }
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'An error occurred';
+      setResponse(`Error: ${errorMessage}`);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [prompt, selectedProvider, selectedAction, code, selectedText, settings, isLoading, onAddMessage, onCodeUpdate]);
+
+  const handleApplyCode = useCallback(() => {
+    const extractedCode = extractCodeFromResponse(response);
+    onCodeUpdate(extractedCode);
+  }, [response, onCodeUpdate]);
+
+  return (
+    <div className="flex h-full flex-col bg-panel">
+      {/* Header */}
+      <div className="border-b border-border bg-panel-header p-3">
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-semibold">AI Assistant</h3>
+          <Select value={selectedProvider} onValueChange={(v) => setSelectedProvider(v as AIProvider)}>
+            <SelectTrigger className="w-32 h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="claude">
+                <span className="flex items-center gap-2">
+                  {PROVIDER_ICONS.claude} Claude
+                </span>
+              </SelectItem>
+              <SelectItem value="gemini">
+                <span className="flex items-center gap-2">
+                  {PROVIDER_ICONS.gemini} Gemini
+                </span>
+              </SelectItem>
+              <SelectItem value="openai">
+                <span className="flex items-center gap-2">
+                  {PROVIDER_ICONS.openai} OpenAI
+                </span>
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Action tabs */}
+        <Tabs value={selectedAction} onValueChange={(v) => setSelectedAction(v as AIAction)}>
+          <TabsList className="grid w-full grid-cols-4 h-8">
+            {AI_ACTIONS.map(({ action, label }) => (
+              <TabsTrigger key={action} value={action} className="text-xs gap-1">
+                {ACTION_ICONS[action]}
+                <span className="hidden sm:inline">{label}</span>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+      </div>
+
+      {/* Content area */}
+      <div className="flex-1 overflow-y-auto p-3">
+        {!hasApiKey ? (
+          <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-center">
+            <p className="text-sm text-destructive">
+              No API key set for {PROVIDER_NAMES[selectedProvider]}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Add your API key in settings to use this provider
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {/* Context indicator */}
+            {selectedText && (
+              <div className="rounded border border-border bg-muted/50 p-2">
+                <p className="mb-1 text-xs font-medium text-muted-foreground">Selected code:</p>
+                <pre className="max-h-20 overflow-y-auto text-xs">
+                  {selectedText.slice(0, 200)}{selectedText.length > 200 ? '...' : ''}
+                </pre>
+              </div>
+            )}
+
+            {/* Response area */}
+            {response && (
+              <div className="rounded-lg border border-border bg-card p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <Badge variant="secondary" className="text-xs">
+                    {PROVIDER_ICONS[selectedProvider]} {PROVIDER_NAMES[selectedProvider]}
+                  </Badge>
+                  {(selectedAction === 'generate' || selectedAction === 'modify' || selectedAction === 'fix') && (
+                    <Button size="sm" variant="outline" onClick={handleApplyCode} className="h-6 text-xs">
+                      Apply to Editor
+                    </Button>
+                  )}
+                </div>
+                <div className="prose prose-sm max-w-none dark:prose-invert">
+                  <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap rounded bg-muted p-2 text-xs">
+                    {response}
+                  </pre>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Input area */}
+      <div className="border-t border-border p-3">
+        <div className="flex gap-2">
+          <Textarea
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder={
+              selectedAction === 'generate'
+                ? 'Describe the 3D object you want to create...'
+                : selectedAction === 'modify'
+                ? 'Describe how to modify the code...'
+                : selectedAction === 'explain'
+                ? 'Ask about the code...'
+                : 'Describe the issue to fix...'
+            }
+            className="min-h-[60px] resize-none text-sm"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                handleSubmit();
+              }
+            }}
+          />
+          <Button
+            onClick={handleSubmit}
+            disabled={!prompt.trim() || isLoading || !hasApiKey}
+            className="h-auto min-w-[60px]"
+          >
+            {isLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4" />
+            )}
+          </Button>
+        </div>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Press Cmd/Ctrl + Enter to send
+        </p>
+      </div>
+    </div>
+  );
+}
