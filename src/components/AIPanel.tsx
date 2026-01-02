@@ -88,7 +88,7 @@ export function AIPanel({ settings, code, selectedText, onCodeUpdate, onAddMessa
       // Auto-apply code for certain actions
       if (selectedAction === 'generate' || selectedAction === 'modify' || selectedAction === 'fix') {
         const extractedCode = extractCodeFromResponse(fullResponse);
-        if (extractedCode && extractedCode !== fullResponse) {
+        if (extractedCode) {
           onCodeUpdate(extractedCode);
         }
       }
