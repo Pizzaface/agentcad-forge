@@ -107,64 +107,73 @@ export function SettingsPanel({
     icon: string,
     label: string,
     placeholder: string
-  ) => (
-    <div className="space-y-2">
-      <Label className="flex items-center gap-2">
-        <span className="text-lg">{icon}</span> {label} API Key
-      </Label>
-      <div className="flex gap-2">
-        <Input
-          type={showKeys[provider] ? 'text' : 'password'}
-          value={settings.providers[provider].apiKey}
-          onChange={(e) => handleKeyChange(provider, e.target.value)}
-          placeholder={placeholder}
-          className="font-mono text-xs"
-        />
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={() => toggleShowKey(provider)}
-        >
-          {showKeys[provider] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-        </Button>
+  ) => {
+    const selectedModel = settings.providers[provider].model;
+    const providerModels = models[provider];
+    const effectiveModels =
+      selectedModel && !providerModels.some((m) => m.value === selectedModel)
+        ? [{ value: selectedModel, label: selectedModel }, ...providerModels]
+        : providerModels;
+
+    return (
+      <div className="space-y-2">
+        <Label className="flex items-center gap-2">
+          <span className="text-lg">{icon}</span> {label} API Key
+        </Label>
+        <div className="flex gap-2">
+          <Input
+            type={showKeys[provider] ? 'text' : 'password'}
+            value={settings.providers[provider].apiKey}
+            onChange={(e) => handleKeyChange(provider, e.target.value)}
+            placeholder={placeholder}
+            className="font-mono text-xs"
+          />
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => toggleShowKey(provider)}
+          >
+            {showKeys[provider] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </Button>
+        </div>
+        <div className="flex gap-2">
+          <Select
+            value={selectedModel}
+            onValueChange={(v) => onUpdateProviderModel(provider, v)}
+            disabled={loading[provider]}
+          >
+            <SelectTrigger className="h-8 flex-1">
+              {loading[provider] ? (
+                <span className="flex items-center gap-2 text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Loading models...
+                </span>
+              ) : (
+                <SelectValue />
+              )}
+            </SelectTrigger>
+            <SelectContent>
+              {effectiveModels.map((m) => (
+                <SelectItem key={m.value} value={m.value}>
+                  {m.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8 shrink-0"
+            onClick={() => fetchModels(provider, settings.providers[provider].apiKey)}
+            disabled={loading[provider] || !settings.providers[provider].apiKey}
+            title="Refresh models"
+          >
+            <RefreshCw className={`h-3 w-3 ${loading[provider] ? 'animate-spin' : ''}`} />
+          </Button>
+        </div>
       </div>
-      <div className="flex gap-2">
-        <Select
-          value={settings.providers[provider].model}
-          onValueChange={(v) => onUpdateProviderModel(provider, v)}
-          disabled={loading[provider]}
-        >
-          <SelectTrigger className="h-8 flex-1">
-            {loading[provider] ? (
-              <span className="flex items-center gap-2 text-muted-foreground">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                Loading models...
-              </span>
-            ) : (
-              <SelectValue>
-                {models[provider].find(m => m.value === settings.providers[provider].model)?.label || settings.providers[provider].model}
-              </SelectValue>
-            )}
-          </SelectTrigger>
-          <SelectContent>
-            {models[provider].map(m => (
-              <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Button
-          variant="outline"
-          size="icon"
-          className="h-8 w-8 shrink-0"
-          onClick={() => fetchModels(provider, settings.providers[provider].apiKey)}
-          disabled={loading[provider] || !settings.providers[provider].apiKey}
-          title="Refresh models"
-        >
-          <RefreshCw className={`h-3 w-3 ${loading[provider] ? 'animate-spin' : ''}`} />
-        </Button>
-      </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <Dialog>
