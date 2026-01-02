@@ -142,7 +142,7 @@ export function SettingsPanel({
             onValueChange={(v) => onUpdateProviderModel(provider, v)}
             disabled={loading[provider]}
           >
-            <SelectTrigger className="h-8 flex-1">
+            <SelectTrigger className="h-8 flex-1 font-mono text-xs">
               {loading[provider] ? (
                 <span className="flex items-center gap-2 text-muted-foreground">
                   <Loader2 className="h-3 w-3 animate-spin" />
@@ -154,8 +154,8 @@ export function SettingsPanel({
             </SelectTrigger>
             <SelectContent>
               {effectiveModels.map((m) => (
-                <SelectItem key={m.value} value={m.value}>
-                  {m.label}
+                <SelectItem key={m.value} value={m.value} className="font-mono text-xs">
+                  {m.value}
                 </SelectItem>
               ))}
             </SelectContent>
