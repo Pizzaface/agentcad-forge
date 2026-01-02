@@ -63,23 +63,24 @@ function MeshModel({ meshData }: { meshData: STLMesh }) {
 }
 
 function ScadPrimitiveModel({ primitive }: { primitive: ScadPrimitive }) {
-  const geometry = useMemo(() => {
+  const isDifference = primitive.operation === 'difference';
+  
+  // Render geometry based on primitive type
+  const renderGeometry = () => {
     switch (primitive.type) {
       case 'cube':
-        return new THREE.BoxGeometry(1, 1, 1);
+        return <boxGeometry args={[1, 1, 1]} />;
       case 'sphere':
-        return new THREE.SphereGeometry(0.5, 32, 32);
+        return <sphereGeometry args={[0.5, 32, 32]} />;
       case 'cylinder':
-        return new THREE.CylinderGeometry(0.5, 0.5, 1, 32);
+        return <cylinderGeometry args={[0.5, 0.5, 1, 32]} />;
       case 'cone':
         const radiusRatio = (primitive.params.radius2 as number) / (primitive.params.radius as number);
-        return new THREE.CylinderGeometry(0.5 * radiusRatio, 0.5, 1, 32);
+        return <cylinderGeometry args={[0.5 * radiusRatio, 0.5, 1, 32]} />;
       default:
-        return new THREE.BoxGeometry(1, 1, 1);
+        return <boxGeometry args={[1, 1, 1]} />;
     }
-  }, [primitive.type, primitive.params]);
-
-  const isDifference = primitive.operation === 'difference';
+  };
   
   return (
     <group
@@ -87,7 +88,8 @@ function ScadPrimitiveModel({ primitive }: { primitive: ScadPrimitive }) {
       rotation={primitive.rotation}
       scale={primitive.scale}
     >
-      <mesh geometry={geometry}>
+      <mesh>
+        {renderGeometry()}
         <meshStandardMaterial
           color={isDifference ? '#ff4466' : '#4a9eff'}
           metalness={0.3}
@@ -97,7 +99,8 @@ function ScadPrimitiveModel({ primitive }: { primitive: ScadPrimitive }) {
           side={THREE.DoubleSide}
         />
       </mesh>
-      <mesh geometry={geometry}>
+      <mesh>
+        {renderGeometry()}
         <meshBasicMaterial
           color="#1a1a2e"
           wireframe
@@ -117,7 +120,10 @@ function ScadPreview({ parsedScad }: { parsedScad: ParsedScad }) {
   return (
     <group>
       {parsedScad.primitives.map((primitive, index) => (
-        <ScadPrimitiveModel key={index} primitive={primitive} />
+        <ScadPrimitiveModel 
+          key={`${primitive.type}-${index}-${primitive.scale.join('-')}`} 
+          primitive={primitive} 
+        />
       ))}
     </group>
   );
