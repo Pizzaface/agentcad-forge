@@ -1,5 +1,5 @@
-import { Suspense, useMemo } from 'react';
-import { Canvas } from '@react-three/fiber';
+import { Suspense, useMemo, useRef, useEffect } from 'react';
+import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, Grid, Environment, PerspectiveCamera } from '@react-three/drei';
 import * as THREE from 'three';
 import { STLMesh } from '@/types/openscad';
@@ -8,9 +8,13 @@ interface ModelViewerProps {
   meshData: STLMesh | null;
   isRendering?: boolean;
   error?: string | null;
+  autoFit?: boolean;
 }
 
-function MeshModel({ meshData }: { meshData: STLMesh }) {
+function MeshModel({ meshData, autoFit = true }: { meshData: STLMesh; autoFit?: boolean }) {
+  const { camera, controls } = useThree();
+  const groupRef = useRef<THREE.Group>(null);
+  
   const geometry = useMemo(() => {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(meshData.vertices, 3));
@@ -20,27 +24,48 @@ function MeshModel({ meshData }: { meshData: STLMesh }) {
     return geo;
   }, [meshData]);
 
-  const centerOffset = useMemo(() => {
+  const { centerOffset, scale } = useMemo(() => {
     if (geometry.boundingBox) {
       const center = new THREE.Vector3();
       geometry.boundingBox.getCenter(center);
-      return center.negate();
-    }
-    return new THREE.Vector3();
-  }, [geometry]);
-
-  const scale = useMemo(() => {
-    if (geometry.boundingBox) {
       const size = new THREE.Vector3();
       geometry.boundingBox.getSize(size);
       const maxDim = Math.max(size.x, size.y, size.z);
-      return maxDim > 0 ? 30 / maxDim : 1;
+      return {
+        centerOffset: center.clone().negate(),
+        scale: maxDim > 0 ? 30 / maxDim : 1,
+      };
     }
-    return 1;
+    return { centerOffset: new THREE.Vector3(), scale: 1 };
   }, [geometry]);
 
+  // Auto-fit camera to model
+  useEffect(() => {
+    if (autoFit && geometry.boundingSphere && camera instanceof THREE.PerspectiveCamera) {
+      const radius = geometry.boundingSphere.radius * scale;
+      const fov = camera.fov * (Math.PI / 180);
+      const distance = radius / Math.sin(fov / 2) * 1.2;
+      
+      // Position camera at a nice angle
+      const angle = Math.PI / 4;
+      camera.position.set(
+        distance * Math.cos(angle),
+        distance * 0.6,
+        distance * Math.sin(angle)
+      );
+      camera.lookAt(0, 0, 0);
+      camera.updateProjectionMatrix();
+      
+      // Update controls target
+      if (controls && 'target' in controls) {
+        (controls as any).target.set(0, 0, 0);
+        (controls as any).update();
+      }
+    }
+  }, [geometry, scale, autoFit, camera, controls]);
+
   return (
-    <group scale={scale} position={centerOffset.multiplyScalar(scale)}>
+    <group ref={groupRef} scale={scale} position={centerOffset.clone().multiplyScalar(scale)}>
       <mesh geometry={geometry}>
         <meshStandardMaterial
           color="#4a9eff"
@@ -95,13 +120,13 @@ function PlaceholderModel() {
   );
 }
 
-export function ModelViewer({ meshData, isRendering, error }: ModelViewerProps) {
+export function ModelViewer({ meshData, isRendering, error, autoFit = true }: ModelViewerProps) {
   const renderContent = () => {
     if (isRendering) {
       return <LoadingIndicator />;
     }
     if (meshData) {
-      return <MeshModel meshData={meshData} />;
+      return <MeshModel meshData={meshData} autoFit={autoFit} />;
     }
     return <PlaceholderModel />;
   };
