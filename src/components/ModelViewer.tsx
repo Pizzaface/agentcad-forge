@@ -3,12 +3,11 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Grid, Environment, PerspectiveCamera } from '@react-three/drei';
 import * as THREE from 'three';
 import { STLMesh } from '@/types/openscad';
-import { ScadPrimitive, ParsedScad } from '@/hooks/useScadPreview';
 
 interface ModelViewerProps {
   meshData: STLMesh | null;
-  parsedScad?: ParsedScad;
   isRendering?: boolean;
+  error?: string | null;
 }
 
 function MeshModel({ meshData }: { meshData: STLMesh }) {
@@ -62,73 +61,6 @@ function MeshModel({ meshData }: { meshData: STLMesh }) {
   );
 }
 
-function ScadPrimitiveModel({ primitive }: { primitive: ScadPrimitive }) {
-  const isDifference = primitive.operation === 'difference';
-  
-  // Render geometry based on primitive type
-  const renderGeometry = () => {
-    switch (primitive.type) {
-      case 'cube':
-        return <boxGeometry args={[1, 1, 1]} />;
-      case 'sphere':
-        return <sphereGeometry args={[0.5, 32, 32]} />;
-      case 'cylinder':
-        return <cylinderGeometry args={[0.5, 0.5, 1, 32]} />;
-      case 'cone':
-        const radiusRatio = (primitive.params.radius2 as number) / (primitive.params.radius as number);
-        return <cylinderGeometry args={[0.5 * radiusRatio, 0.5, 1, 32]} />;
-      default:
-        return <boxGeometry args={[1, 1, 1]} />;
-    }
-  };
-  
-  return (
-    <group
-      position={primitive.position}
-      rotation={primitive.rotation}
-      scale={primitive.scale}
-    >
-      <mesh>
-        {renderGeometry()}
-        <meshStandardMaterial
-          color={isDifference ? '#ff4466' : '#4a9eff'}
-          metalness={0.3}
-          roughness={0.5}
-          transparent={isDifference}
-          opacity={isDifference ? 0.5 : 1}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
-      <mesh>
-        {renderGeometry()}
-        <meshBasicMaterial
-          color="#1a1a2e"
-          wireframe
-          transparent
-          opacity={0.15}
-        />
-      </mesh>
-    </group>
-  );
-}
-
-function ScadPreview({ parsedScad }: { parsedScad: ParsedScad }) {
-  if (!parsedScad.isValid || parsedScad.primitives.length === 0) {
-    return <PlaceholderModel />;
-  }
-
-  return (
-    <group>
-      {parsedScad.primitives.map((primitive, index) => (
-        <ScadPrimitiveModel 
-          key={`${primitive.type}-${index}-${primitive.scale.join('-')}`} 
-          primitive={primitive} 
-        />
-      ))}
-    </group>
-  );
-}
-
 function LoadingIndicator() {
   return (
     <mesh>
@@ -163,16 +95,13 @@ function PlaceholderModel() {
   );
 }
 
-export function ModelViewer({ meshData, parsedScad, isRendering }: ModelViewerProps) {
+export function ModelViewer({ meshData, isRendering, error }: ModelViewerProps) {
   const renderContent = () => {
     if (isRendering) {
       return <LoadingIndicator />;
     }
     if (meshData) {
       return <MeshModel meshData={meshData} />;
-    }
-    if (parsedScad) {
-      return <ScadPreview parsedScad={parsedScad} />;
     }
     return <PlaceholderModel />;
   };
@@ -225,6 +154,14 @@ export function ModelViewer({ meshData, parsedScad, isRendering }: ModelViewerPr
           </div>
         )}
       </div>
+      
+      {/* Error overlay */}
+      {error && (
+        <div className="absolute top-3 left-3 right-3 max-h-32 overflow-auto rounded bg-destructive/90 px-3 py-2 text-xs text-destructive-foreground backdrop-blur-sm">
+          <div className="font-medium mb-1">OpenSCAD Error:</div>
+          <pre className="whitespace-pre-wrap font-mono text-xs">{error}</pre>
+        </div>
+      )}
     </div>
   );
 }

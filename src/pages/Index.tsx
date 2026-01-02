@@ -1,35 +1,43 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Code2, Box, Bot, ChevronLeft, ChevronRight, FileCode2 } from 'lucide-react';
+import { Code2, Box, Bot, ChevronLeft, ChevronRight, FileCode2, Loader2 } from 'lucide-react';
 import { ScadEditor } from '@/components/ScadEditor';
 import { ModelViewer } from '@/components/ModelViewer';
 import { AIPanel } from '@/components/AIPanel';
 import { SettingsPanel } from '@/components/SettingsPanel';
 import { STLUploader } from '@/components/STLUploader';
 import { useSettings } from '@/hooks/useSettings';
-import { useScadPreview } from '@/hooks/useScadPreview';
+import { useOpenScad } from '@/hooks/useOpenScad';
 import { OPENSCAD_TEMPLATE, AIMessage, STLMesh } from '@/types/openscad';
 
 export default function Index() {
   const { settings, updateSettings, updateProviderKey, updateProviderModel, toggleTheme } = useSettings();
   const [code, setCode] = useState(OPENSCAD_TEMPLATE);
   const [selectedText, setSelectedText] = useState('');
-  const [meshData, setMeshData] = useState<STLMesh | null>(null);
+  const [uploadedMesh, setUploadedMesh] = useState<STLMesh | null>(null);
   const [messages, setMessages] = useState<AIMessage[]>([]);
   const [showAIPanel, setShowAIPanel] = useState(true);
   
-  // Auto-render SCAD preview with 500ms debounce
-  const { parsedScad, isRendering } = useScadPreview(code, 500);
+  // Full OpenSCAD WASM rendering with 1.5s debounce
+  const { mesh: renderedMesh, isRendering, isLoading, error, render } = useOpenScad(true, 1500);
+
+  // Trigger render when code changes
+  useEffect(() => {
+    render(code);
+  }, [code, render]);
 
   const handleAddMessage = useCallback((message: AIMessage) => {
     setMessages(prev => [...prev, message]);
   }, []);
 
   const handleMeshLoaded = useCallback((mesh: STLMesh) => {
-    setMeshData(mesh);
+    setUploadedMesh(mesh);
   }, []);
+
+  // Use uploaded mesh if available, otherwise use rendered mesh
+  const meshData = uploadedMesh || renderedMesh;
 
   return (
     <div className="flex h-screen flex-col bg-background">
@@ -96,6 +104,17 @@ export default function Index() {
               <div className="flex h-9 items-center gap-2 border-b border-border bg-panel-header px-3">
                 <Box className="h-4 w-4 text-muted-foreground" />
                 <span className="text-xs font-medium">3D Preview</span>
+                {isLoading && (
+                  <Badge variant="outline" className="ml-2 text-xs flex items-center gap-1">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Loading WASM...
+                  </Badge>
+                )}
+                {error && (
+                  <Badge variant="destructive" className="ml-2 text-xs">
+                    Error
+                  </Badge>
+                )}
                 {meshData && (
                   <Badge variant="outline" className="ml-auto text-xs">
                     {(meshData.vertices.length / 9).toLocaleString()} triangles
@@ -103,7 +122,7 @@ export default function Index() {
                 )}
               </div>
               <div className="relative flex-1 p-2">
-                <ModelViewer meshData={meshData} parsedScad={parsedScad} isRendering={isRendering} />
+                <ModelViewer meshData={meshData} isRendering={isRendering} error={error} />
               </div>
             </div>
           </ResizablePanel>
