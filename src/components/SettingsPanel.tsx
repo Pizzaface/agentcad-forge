@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -6,8 +6,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Settings, Eye, EyeOff, Moon, Sun } from 'lucide-react';
+import { Settings, Eye, EyeOff, Moon, Sun, Loader2, RefreshCw } from 'lucide-react';
 import { AppSettings, AIProvider } from '@/types/openscad';
+import { 
+  ModelInfo, 
+  fetchClaudeModels, 
+  fetchGeminiModels, 
+  fetchOpenAIModels,
+  getFallbackModels 
+} from '@/lib/model-fetcher';
 
 interface SettingsPanelProps {
   settings: AppSettings;
@@ -16,24 +23,6 @@ interface SettingsPanelProps {
   onUpdateProviderModel: (provider: AIProvider, model: string) => void;
   onToggleTheme: () => void;
 }
-
-const CLAUDE_MODELS = [
-  { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4' },
-  { value: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet' },
-  { value: 'claude-3-5-haiku-20241022', label: 'Claude 3.5 Haiku' },
-];
-
-const GEMINI_MODELS = [
-  { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-  { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-  { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
-];
-
-const OPENAI_MODELS = [
-  { value: 'gpt-4o', label: 'GPT-4o' },
-  { value: 'gpt-4o-mini', label: 'GPT-4o Mini' },
-  { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
-];
 
 export function SettingsPanel({
   settings,
@@ -48,9 +37,132 @@ export function SettingsPanel({
     openai: false,
   });
 
+  const [models, setModels] = useState<Record<AIProvider, ModelInfo[]>>({
+    claude: getFallbackModels('claude'),
+    gemini: getFallbackModels('gemini'),
+    openai: getFallbackModels('openai'),
+  });
+
+  const [loading, setLoading] = useState<Record<AIProvider, boolean>>({
+    claude: false,
+    gemini: false,
+    openai: false,
+  });
+
+  const fetchModels = useCallback(async (provider: AIProvider, apiKey: string) => {
+    if (!apiKey) {
+      setModels(prev => ({ ...prev, [provider]: getFallbackModels(provider) }));
+      return;
+    }
+
+    setLoading(prev => ({ ...prev, [provider]: true }));
+    
+    try {
+      let fetchedModels: ModelInfo[];
+      switch (provider) {
+        case 'claude':
+          fetchedModels = await fetchClaudeModels(apiKey);
+          break;
+        case 'gemini':
+          fetchedModels = await fetchGeminiModels(apiKey);
+          break;
+        case 'openai':
+          fetchedModels = await fetchOpenAIModels(apiKey);
+          break;
+      }
+      setModels(prev => ({ ...prev, [provider]: fetchedModels }));
+    } finally {
+      setLoading(prev => ({ ...prev, [provider]: false }));
+    }
+  }, []);
+
+  // Fetch models when API key changes (debounced)
+  useEffect(() => {
+    const timeouts: Record<string, NodeJS.Timeout> = {};
+    
+    (['claude', 'gemini', 'openai'] as AIProvider[]).forEach(provider => {
+      const apiKey = settings.providers[provider].apiKey;
+      if (apiKey.length > 10) {
+        timeouts[provider] = setTimeout(() => {
+          fetchModels(provider, apiKey);
+        }, 500);
+      }
+    });
+
+    return () => {
+      Object.values(timeouts).forEach(clearTimeout);
+    };
+  }, [settings.providers.claude.apiKey, settings.providers.gemini.apiKey, settings.providers.openai.apiKey, fetchModels]);
+
   const toggleShowKey = (provider: AIProvider) => {
     setShowKeys(prev => ({ ...prev, [provider]: !prev[provider] }));
   };
+
+  const handleKeyChange = (provider: AIProvider, key: string) => {
+    onUpdateProviderKey(provider, key);
+  };
+
+  const renderProviderSection = (
+    provider: AIProvider,
+    icon: string,
+    label: string,
+    placeholder: string
+  ) => (
+    <div className="space-y-2">
+      <Label className="flex items-center gap-2">
+        <span className="text-lg">{icon}</span> {label} API Key
+      </Label>
+      <div className="flex gap-2">
+        <Input
+          type={showKeys[provider] ? 'text' : 'password'}
+          value={settings.providers[provider].apiKey}
+          onChange={(e) => handleKeyChange(provider, e.target.value)}
+          placeholder={placeholder}
+          className="font-mono text-xs"
+        />
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={() => toggleShowKey(provider)}
+        >
+          {showKeys[provider] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+        </Button>
+      </div>
+      <div className="flex gap-2">
+        <Select
+          value={settings.providers[provider].model}
+          onValueChange={(v) => onUpdateProviderModel(provider, v)}
+          disabled={loading[provider]}
+        >
+          <SelectTrigger className="h-8 flex-1">
+            {loading[provider] ? (
+              <span className="flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Loading models...
+              </span>
+            ) : (
+              <SelectValue />
+            )}
+          </SelectTrigger>
+          <SelectContent>
+            {models[provider].map(m => (
+              <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button
+          variant="outline"
+          size="icon"
+          className="h-8 w-8 shrink-0"
+          onClick={() => fetchModels(provider, settings.providers[provider].apiKey)}
+          disabled={loading[provider] || !settings.providers[provider].apiKey}
+          title="Refresh models"
+        >
+          <RefreshCw className={`h-3 w-3 ${loading[provider] ? 'animate-spin' : ''}`} />
+        </Button>
+      </div>
+    </div>
+  );
 
   return (
     <Dialog>
@@ -71,116 +183,12 @@ export function SettingsPanel({
           </TabsList>
 
           <TabsContent value="api-keys" className="space-y-4 pt-4">
-            {/* Claude */}
-            <div className="space-y-2">
-              <Label className="flex items-center gap-2">
-                <span className="text-lg">🟠</span> Claude API Key
-              </Label>
-              <div className="flex gap-2">
-                <Input
-                  type={showKeys.claude ? 'text' : 'password'}
-                  value={settings.providers.claude.apiKey}
-                  onChange={(e) => onUpdateProviderKey('claude', e.target.value)}
-                  placeholder="sk-ant-..."
-                  className="font-mono text-xs"
-                />
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => toggleShowKey('claude')}
-                >
-                  {showKeys.claude ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </Button>
-              </div>
-              <Select
-                value={settings.providers.claude.model}
-                onValueChange={(v) => onUpdateProviderModel('claude', v)}
-              >
-                <SelectTrigger className="h-8">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {CLAUDE_MODELS.map(m => (
-                    <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Gemini */}
-            <div className="space-y-2">
-              <Label className="flex items-center gap-2">
-                <span className="text-lg">🔵</span> Gemini API Key
-              </Label>
-              <div className="flex gap-2">
-                <Input
-                  type={showKeys.gemini ? 'text' : 'password'}
-                  value={settings.providers.gemini.apiKey}
-                  onChange={(e) => onUpdateProviderKey('gemini', e.target.value)}
-                  placeholder="AIza..."
-                  className="font-mono text-xs"
-                />
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => toggleShowKey('gemini')}
-                >
-                  {showKeys.gemini ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </Button>
-              </div>
-              <Select
-                value={settings.providers.gemini.model}
-                onValueChange={(v) => onUpdateProviderModel('gemini', v)}
-              >
-                <SelectTrigger className="h-8">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {GEMINI_MODELS.map(m => (
-                    <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* OpenAI */}
-            <div className="space-y-2">
-              <Label className="flex items-center gap-2">
-                <span className="text-lg">🟢</span> OpenAI API Key
-              </Label>
-              <div className="flex gap-2">
-                <Input
-                  type={showKeys.openai ? 'text' : 'password'}
-                  value={settings.providers.openai.apiKey}
-                  onChange={(e) => onUpdateProviderKey('openai', e.target.value)}
-                  placeholder="sk-..."
-                  className="font-mono text-xs"
-                />
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => toggleShowKey('openai')}
-                >
-                  {showKeys.openai ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </Button>
-              </div>
-              <Select
-                value={settings.providers.openai.model}
-                onValueChange={(v) => onUpdateProviderModel('openai', v)}
-              >
-                <SelectTrigger className="h-8">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {OPENAI_MODELS.map(m => (
-                    <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {renderProviderSection('claude', '🟠', 'Claude', 'sk-ant-...')}
+            {renderProviderSection('gemini', '🔵', 'Gemini', 'AIza...')}
+            {renderProviderSection('openai', '🟢', 'OpenAI', 'sk-...')}
 
             <p className="text-xs text-muted-foreground">
-              API keys are stored locally in your browser and never sent to our servers.
+              API keys are stored locally in your browser. Models are fetched from each provider's API.
             </p>
           </TabsContent>
 
