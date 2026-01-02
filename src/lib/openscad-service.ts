@@ -5,6 +5,7 @@ import { STLMesh } from '@/types/openscad';
 let openscadInstance: OpenSCADInstance | null = null;
 let initPromise: Promise<OpenSCADInstance> | null = null;
 let loadingProgress: 'idle' | 'loading' | 'ready' | 'error' = 'idle';
+let errorLogs: string[] = [];
 
 export interface RenderResult {
   success: boolean;
@@ -27,11 +28,17 @@ export async function initOpenSCAD(): Promise<OpenSCADInstance> {
   }
 
   loadingProgress = 'loading';
+  errorLogs = [];
   
   initPromise = createOpenSCAD({
     noInitialRun: true,
-    print: (text) => console.log('[OpenSCAD]', text),
-    printErr: (text) => console.warn('[OpenSCAD Error]', text),
+    print: (text) => {
+      console.log('[OpenSCAD]', text);
+    },
+    printErr: (text) => {
+      console.warn('[OpenSCAD Error]', text);
+      errorLogs.push(text);
+    },
   }).then((instance) => {
     openscadInstance = instance;
     loadingProgress = 'ready';
@@ -48,16 +55,96 @@ export async function initOpenSCAD(): Promise<OpenSCADInstance> {
 
 export async function renderScadToSTL(code: string): Promise<RenderResult> {
   const logs: string[] = [];
+  errorLogs = []; // Reset error logs for this render
   
   try {
     const instance = await initOpenSCAD();
-    const stlContent = await instance.renderToStl(code);
+    const rawInstance = instance.getInstance();
+    
+    // Write code to input file
+    rawInstance.FS.writeFile("/input.scad", code);
+    
+    // Run OpenSCAD with appropriate flags
+    let exitCode: number;
+    try {
+      exitCode = rawInstance.callMain([
+        "/input.scad", 
+        "--enable=manifold",
+        "-o", 
+        "/output.stl"
+      ]);
+    } catch (mainError) {
+      // callMain can throw on certain errors
+      console.error('[OpenSCAD] callMain threw:', mainError);
+      errorLogs.push(mainError instanceof Error ? mainError.message : String(mainError));
+      exitCode = 1;
+    }
+    
+    // Check for errors
+    if (exitCode !== 0) {
+      const errorMsg = errorLogs.length > 0 
+        ? errorLogs.join('\n') 
+        : `OpenSCAD exited with code ${exitCode}`;
+      
+      // Cleanup input file
+      try {
+        rawInstance.FS.unlink("/input.scad");
+      } catch (e) {
+        // Ignore cleanup errors
+      }
+      
+      return {
+        success: false,
+        error: errorMsg,
+        logs: errorLogs,
+      };
+    }
+    
+    // Try to read output file
+    let stlContent: string;
+    try {
+      stlContent = rawInstance.FS.readFile("/output.stl", { encoding: "utf8" }) as string;
+    } catch (e) {
+      const errorMsg = errorLogs.length > 0 
+        ? errorLogs.join('\n') 
+        : 'No output generated. The model may be empty or have errors.';
+      return {
+        success: false,
+        error: errorMsg,
+        logs: errorLogs,
+      };
+    }
+    
+    // Check if STL is empty or has no geometry
+    if (!stlContent || stlContent.trim().length < 50) {
+      return {
+        success: false,
+        error: 'No geometry generated. Check your OpenSCAD code.',
+        logs: errorLogs,
+      };
+    }
+    
+    // Cleanup
+    try {
+      rawInstance.FS.unlink("/input.scad");
+      rawInstance.FS.unlink("/output.stl");
+    } catch (e) {
+      // Ignore cleanup errors
+    }
     
     // Parse the STL string into mesh data
-    // The STL is in ASCII format, so we convert it to ArrayBuffer
     const encoder = new TextEncoder();
     const buffer = encoder.encode(stlContent).buffer;
     const mesh = parseSTL(buffer);
+    
+    // Verify mesh has vertices
+    if (!mesh.vertices || mesh.vertices.length === 0) {
+      return {
+        success: false,
+        error: 'Generated STL has no geometry.',
+        logs: errorLogs,
+      };
+    }
     
     return {
       success: true,
@@ -65,13 +152,18 @@ export async function renderScadToSTL(code: string): Promise<RenderResult> {
       logs,
     };
   } catch (error) {
+    console.error('[OpenSCAD] renderScadToSTL error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    logs.push(`Error: ${errorMessage}`);
+    
+    // Include any OpenSCAD error output
+    const fullError = errorLogs.length > 0 
+      ? `${errorMessage}\n\n${errorLogs.join('\n')}`
+      : errorMessage;
     
     return {
       success: false,
-      error: errorMessage,
-      logs,
+      error: fullError,
+      logs: errorLogs,
     };
   }
 }
