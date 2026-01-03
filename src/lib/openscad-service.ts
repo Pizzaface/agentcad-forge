@@ -179,6 +179,61 @@ export async function renderScadToSTL(code: string): Promise<RenderResult> {
   }
 }
 
+/**
+ * Quick validation pass - runs OpenSCAD in preview mode to check for errors
+ * without generating full geometry. Much faster than full render.
+ */
+export async function validateScadCode(code: string): Promise<{ valid: boolean; errors: string[] }> {
+  const errors: string[] = [];
+  
+  try {
+    const instance = await initOpenSCAD();
+    const rawInstance = instance.getInstance();
+    
+    // Capture errors for this validation
+    const originalPrintErr = rawInstance.printErr;
+    rawInstance.printErr = (text: string) => {
+      errors.push(text);
+    };
+    
+    // Write code to input file
+    rawInstance.FS.writeFile("/validate.scad", code);
+    
+    // Run in preview mode (faster, no CGAL)
+    let exitCode: number;
+    try {
+      exitCode = rawInstance.callMain([
+        "/validate.scad",
+        "--preview",
+        "-o", "/dev/null"
+      ]);
+    } catch (mainError) {
+      exitCode = typeof mainError === 'number' ? mainError : 1;
+    } finally {
+      if (originalPrintErr) {
+        rawInstance.printErr = originalPrintErr;
+      }
+    }
+    
+    // Cleanup
+    try {
+      rawInstance.FS.unlink("/validate.scad");
+    } catch (e) {
+      // Ignore cleanup errors
+    }
+    
+    return {
+      valid: exitCode === 0 && errors.length === 0,
+      errors,
+    };
+  } catch (error) {
+    return {
+      valid: false,
+      errors: [error instanceof Error ? error.message : 'Validation failed'],
+    };
+  }
+}
+
 // Preload OpenSCAD in the background
 export function preloadOpenSCAD(): void {
   if (loadingProgress === 'idle') {

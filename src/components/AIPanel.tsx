@@ -16,6 +16,7 @@ interface AIPanelProps {
   compileError: string | null;
   onCodeUpdate: (code: string) => void;
   onAddMessage: (message: AIMessage) => void;
+  onValidate: (code: string) => Promise<{ valid: boolean; errors: string[] }>;
 }
 
 const PROVIDER_ICONS: Record<AIProvider, string> = {
@@ -37,21 +38,28 @@ const ACTION_ICONS: Record<AIAction, React.ReactNode> = {
   fix: <Wrench className="h-4 w-4" />,
 };
 
-export function AIPanel({ settings, code, selectedText, compileError, onCodeUpdate, onAddMessage }: AIPanelProps) {
+export function AIPanel({ settings, code, selectedText, compileError, onCodeUpdate, onAddMessage, onValidate }: AIPanelProps) {
   const [selectedProvider, setSelectedProvider] = useState<AIProvider>(settings.defaultProvider);
   const [selectedAction, setSelectedAction] = useState<AIAction>('generate');
   const [prompt, setPrompt] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isValidating, setIsValidating] = useState(false);
   const [response, setResponse] = useState<string>('');
 
   const hasApiKey = settings.providers[selectedProvider].apiKey.length > 0;
 
   // Build the effective prompt, including compile error for 'fix' action
-  const buildPrompt = useCallback((userPrompt: string): string => {
-    if (selectedAction === 'fix' && compileError) {
-      return `${userPrompt}\n\nCompile Error:\n${compileError}`;
+  const buildPrompt = useCallback((userPrompt: string, validationErrors?: string[]): string => {
+    let fullPrompt = userPrompt;
+    
+    // Add validation errors if present
+    if (validationErrors && validationErrors.length > 0) {
+      fullPrompt += `\n\nValidation Errors:\n${validationErrors.join('\n')}`;
+    } else if (selectedAction === 'fix' && compileError) {
+      fullPrompt += `\n\nCompile Error:\n${compileError}`;
     }
-    return userPrompt;
+    
+    return fullPrompt;
   }, [selectedAction, compileError]);
 
   const handleSubmit = useCallback(async () => {
@@ -70,12 +78,27 @@ export function AIPanel({ settings, code, selectedText, compileError, onCodeUpda
     onAddMessage(userMessage);
 
     let fullResponse = '';
+    let validationErrors: string[] | undefined;
+
+    // Pre-validate code for modify/fix actions to get fresh errors
+    if ((selectedAction === 'modify' || selectedAction === 'fix') && code) {
+      setIsValidating(true);
+      try {
+        const validationResult = await onValidate(code);
+        if (!validationResult.valid) {
+          validationErrors = validationResult.errors;
+        }
+      } catch (e) {
+        // Continue without validation errors
+      }
+      setIsValidating(false);
+    }
 
     try {
       await sendAIRequest({
         provider: selectedProvider,
         action: selectedAction,
-        userMessage: buildPrompt(prompt),
+        userMessage: buildPrompt(prompt, validationErrors),
         code,
         selectedText,
         settings,
@@ -107,7 +130,7 @@ export function AIPanel({ settings, code, selectedText, compileError, onCodeUpda
     } finally {
       setIsLoading(false);
     }
-  }, [prompt, selectedProvider, selectedAction, code, selectedText, settings, isLoading, onAddMessage, onCodeUpdate]);
+  }, [prompt, selectedProvider, selectedAction, code, selectedText, settings, isLoading, onAddMessage, onCodeUpdate, onValidate, buildPrompt]);
 
   const handleApplyCode = useCallback(() => {
     const extractedCode = extractCodeFromResponse(response);
@@ -242,6 +265,8 @@ export function AIPanel({ settings, code, selectedText, compileError, onCodeUpda
             className="h-auto min-w-[60px]"
           >
             {isLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : isValidating ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <Send className="h-4 w-4" />
