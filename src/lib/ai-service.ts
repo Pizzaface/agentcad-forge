@@ -204,7 +204,7 @@ async function streamOpenAIRequest(
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userMessage },
       ],
-      max_tokens: 4096,
+      max_completion_tokens: 4096,
       stream: true,
     }),
   });
