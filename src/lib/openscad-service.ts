@@ -55,11 +55,18 @@ export async function initOpenSCAD(): Promise<OpenSCADInstance> {
 
 export async function renderScadToSTL(code: string): Promise<RenderResult> {
   const logs: string[] = [];
-  errorLogs = []; // Reset error logs for this render
+  const renderErrorLogs: string[] = []; // Local error logs for this render
   
   try {
     const instance = await initOpenSCAD();
     const rawInstance = instance.getInstance();
+    
+    // Override printErr temporarily to capture errors for this render
+    const originalPrintErr = rawInstance.printErr;
+    rawInstance.printErr = (text: string) => {
+      console.warn('[OpenSCAD Error]', text);
+      renderErrorLogs.push(text);
+    };
     
     // Write code to input file
     rawInstance.FS.writeFile("/input.scad", code);
@@ -74,16 +81,20 @@ export async function renderScadToSTL(code: string): Promise<RenderResult> {
         "/output.stl"
       ]);
     } catch (mainError) {
-      // callMain can throw on certain errors
+      // callMain throws the exit code as a number on error
       console.error('[OpenSCAD] callMain threw:', mainError);
-      errorLogs.push(mainError instanceof Error ? mainError.message : String(mainError));
-      exitCode = 1;
+      exitCode = typeof mainError === 'number' ? mainError : 1;
+    } finally {
+      // Restore original printErr
+      if (originalPrintErr) {
+        rawInstance.printErr = originalPrintErr;
+      }
     }
     
     // Check for errors
     if (exitCode !== 0) {
-      const errorMsg = errorLogs.length > 0 
-        ? errorLogs.join('\n') 
+      const errorMsg = renderErrorLogs.length > 0 
+        ? renderErrorLogs.join('\n') 
         : `OpenSCAD exited with code ${exitCode}`;
       
       // Cleanup input file
@@ -96,7 +107,7 @@ export async function renderScadToSTL(code: string): Promise<RenderResult> {
       return {
         success: false,
         error: errorMsg,
-        logs: errorLogs,
+        logs: renderErrorLogs,
       };
     }
     
@@ -105,13 +116,13 @@ export async function renderScadToSTL(code: string): Promise<RenderResult> {
     try {
       stlContent = rawInstance.FS.readFile("/output.stl", { encoding: "utf8" }) as string;
     } catch (e) {
-      const errorMsg = errorLogs.length > 0 
-        ? errorLogs.join('\n') 
+      const errorMsg = renderErrorLogs.length > 0 
+        ? renderErrorLogs.join('\n') 
         : 'No output generated. The model may be empty or have errors.';
       return {
         success: false,
         error: errorMsg,
-        logs: errorLogs,
+        logs: renderErrorLogs,
       };
     }
     
@@ -120,7 +131,7 @@ export async function renderScadToSTL(code: string): Promise<RenderResult> {
       return {
         success: false,
         error: 'No geometry generated. Check your OpenSCAD code.',
-        logs: errorLogs,
+        logs: renderErrorLogs,
       };
     }
     
@@ -142,7 +153,7 @@ export async function renderScadToSTL(code: string): Promise<RenderResult> {
       return {
         success: false,
         error: 'Generated STL has no geometry.',
-        logs: errorLogs,
+        logs: renderErrorLogs,
       };
     }
     
@@ -156,14 +167,14 @@ export async function renderScadToSTL(code: string): Promise<RenderResult> {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     
     // Include any OpenSCAD error output
-    const fullError = errorLogs.length > 0 
-      ? `${errorMessage}\n\n${errorLogs.join('\n')}`
+    const fullError = renderErrorLogs.length > 0 
+      ? `${errorMessage}\n\n${renderErrorLogs.join('\n')}`
       : errorMessage;
     
     return {
       success: false,
       error: fullError,
-      logs: errorLogs,
+      logs: renderErrorLogs,
     };
   }
 }
