@@ -13,6 +13,7 @@ interface AIPanelProps {
   settings: AppSettings;
   code: string;
   selectedText: string;
+  compileError: string | null;
   onCodeUpdate: (code: string) => void;
   onAddMessage: (message: AIMessage) => void;
 }
@@ -36,7 +37,7 @@ const ACTION_ICONS: Record<AIAction, React.ReactNode> = {
   fix: <Wrench className="h-4 w-4" />,
 };
 
-export function AIPanel({ settings, code, selectedText, onCodeUpdate, onAddMessage }: AIPanelProps) {
+export function AIPanel({ settings, code, selectedText, compileError, onCodeUpdate, onAddMessage }: AIPanelProps) {
   const [selectedProvider, setSelectedProvider] = useState<AIProvider>(settings.defaultProvider);
   const [selectedAction, setSelectedAction] = useState<AIAction>('generate');
   const [prompt, setPrompt] = useState('');
@@ -44,6 +45,14 @@ export function AIPanel({ settings, code, selectedText, onCodeUpdate, onAddMessa
   const [response, setResponse] = useState<string>('');
 
   const hasApiKey = settings.providers[selectedProvider].apiKey.length > 0;
+
+  // Build the effective prompt, including compile error for 'fix' action
+  const buildPrompt = useCallback((userPrompt: string): string => {
+    if (selectedAction === 'fix' && compileError) {
+      return `${userPrompt}\n\nCompile Error:\n${compileError}`;
+    }
+    return userPrompt;
+  }, [selectedAction, compileError]);
 
   const handleSubmit = useCallback(async () => {
     if (!prompt.trim() || isLoading) return;
@@ -66,7 +75,7 @@ export function AIPanel({ settings, code, selectedText, onCodeUpdate, onAddMessa
       await sendAIRequest({
         provider: selectedProvider,
         action: selectedAction,
-        userMessage: prompt,
+        userMessage: buildPrompt(prompt),
         code,
         selectedText,
         settings,
@@ -161,6 +170,16 @@ export function AIPanel({ settings, code, selectedText, onCodeUpdate, onAddMessa
           </div>
         ) : (
           <div className="space-y-3">
+            {/* Compile error indicator */}
+            {compileError && selectedAction === 'fix' && (
+              <div className="rounded border border-destructive/50 bg-destructive/10 p-2">
+                <p className="mb-1 text-xs font-medium text-destructive">Compile error:</p>
+                <pre className="max-h-20 overflow-y-auto text-xs text-destructive/80">
+                  {compileError.slice(0, 300)}{compileError.length > 300 ? '...' : ''}
+                </pre>
+              </div>
+            )}
+
             {/* Context indicator */}
             {selectedText && (
               <div className="rounded border border-border bg-muted/50 p-2">

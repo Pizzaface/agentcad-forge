@@ -142,6 +142,7 @@ export default function Index() {
                       settings={settings}
                       code={code}
                       selectedText={selectedText}
+                      compileError={error}
                       onCodeUpdate={setCode}
                       onAddMessage={handleAddMessage}
                     />
