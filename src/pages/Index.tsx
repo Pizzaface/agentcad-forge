@@ -22,7 +22,7 @@ export default function Index() {
   const [showAIPanel, setShowAIPanel] = useState(true);
   
   // Full OpenSCAD WASM rendering with 1.5s debounce
-  const { mesh: renderedMesh, isRendering, isLoading, error, lintErrors, render } = useOpenScad(true, 1500);
+  const { mesh: renderedMesh, isRendering, isLoading, error, lintErrors, render, validate } = useOpenScad(true, 1500);
 
   // Format errors for AI context
   const formattedErrors = error 
@@ -154,6 +154,7 @@ export default function Index() {
                       compileError={formattedErrors}
                       onCodeUpdate={setCode}
                       onAddMessage={handleAddMessage}
+                      onValidate={validate}
                     />
                   </div>
                 </div>

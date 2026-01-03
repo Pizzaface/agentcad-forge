@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { renderScadToSTL, preloadOpenSCAD, getLoadingStatus, RenderResult } from '@/lib/openscad-service';
+import { renderScadToSTL, validateScadCode, preloadOpenSCAD, getLoadingStatus, RenderResult } from '@/lib/openscad-service';
 import { lintOpenSCAD, parseOpenSCADErrors, formatLintErrors, LintError } from '@/lib/openscad-linter';
 import { STLMesh } from '@/types/openscad';
 
@@ -11,6 +11,7 @@ interface UseOpenScadResult {
   lintErrors: LintError[];
   logs: string[];
   render: (code: string) => void;
+  validate: (code: string) => Promise<{ valid: boolean; errors: string[] }>;
 }
 
 export function useOpenScad(autoRender: boolean = true, debounceMs: number = 1000): UseOpenScadResult {
@@ -50,6 +51,27 @@ export function useOpenScad(autoRender: boolean = true, debounceMs: number = 100
     
     checkStatus();
     return () => clearInterval(interval);
+  }, []);
+
+  // Quick validation using OpenSCAD preview mode
+  const validate = useCallback(async (code: string): Promise<{ valid: boolean; errors: string[] }> => {
+    if (!code.trim()) {
+      return { valid: true, errors: [] };
+    }
+
+    // Run static linter first
+    const lintResult = lintOpenSCAD(code);
+    const lintErrorMessages = lintResult.errors
+      .filter(e => e.severity === 'error')
+      .map(e => `Line ${e.line}: ${e.message}`);
+
+    if (lintErrorMessages.length > 0) {
+      return { valid: false, errors: lintErrorMessages };
+    }
+
+    // Run OpenSCAD validation (preview mode - faster)
+    const validationResult = await validateScadCode(code);
+    return validationResult;
   }, []);
 
   const render = useCallback(async (code: string) => {
@@ -137,5 +159,6 @@ export function useOpenScad(autoRender: boolean = true, debounceMs: number = 100
     lintErrors,
     logs,
     render: autoRender ? debouncedRender : render,
+    validate,
   };
 }
