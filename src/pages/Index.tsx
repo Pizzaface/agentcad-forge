@@ -99,6 +99,7 @@ export default function Index() {
                   onChange={setCode}
                   onSelectionChange={setSelectedText}
                   fontSize={settings.editorFontSize}
+                  lintErrors={lintErrors}
                 />
               </div>
             </div>
