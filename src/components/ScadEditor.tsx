@@ -1,12 +1,14 @@
-import { useCallback, useRef } from 'react';
-import Editor, { OnMount, OnChange } from '@monaco-editor/react';
+import { useCallback, useRef, useEffect } from 'react';
+import Editor, { OnMount, OnChange, Monaco } from '@monaco-editor/react';
 import type { editor } from 'monaco-editor';
+import { LintError } from '@/lib/openscad-linter';
 
 interface ScadEditorProps {
   code: string;
   onChange: (code: string) => void;
   onSelectionChange?: (selectedText: string) => void;
   fontSize?: number;
+  lintErrors?: LintError[];
 }
 
 // OpenSCAD language definition
@@ -88,11 +90,13 @@ const openscadTheme: editor.IStandaloneThemeData = {
   },
 };
 
-export function ScadEditor({ code, onChange, onSelectionChange, fontSize = 14 }: ScadEditorProps) {
+export function ScadEditor({ code, onChange, onSelectionChange, fontSize = 14, lintErrors = [] }: ScadEditorProps) {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
+  const monacoRef = useRef<Monaco | null>(null);
 
   const handleEditorMount: OnMount = useCallback((editor, monaco) => {
     editorRef.current = editor;
+    monacoRef.current = monaco;
 
     // Register OpenSCAD language
     monaco.languages.register({ id: 'openscad' });
@@ -108,6 +112,32 @@ export function ScadEditor({ code, onChange, onSelectionChange, fontSize = 14 }:
       }
     });
   }, [onSelectionChange]);
+
+  // Update markers when lint errors change
+  useEffect(() => {
+    const editor = editorRef.current;
+    const monaco = monacoRef.current;
+    
+    if (!editor || !monaco) return;
+    
+    const model = editor.getModel();
+    if (!model) return;
+
+    // Convert lint errors to Monaco markers
+    const markers: editor.IMarkerData[] = lintErrors.map((error) => ({
+      severity: error.severity === 'error' 
+        ? monaco.MarkerSeverity.Error 
+        : monaco.MarkerSeverity.Warning,
+      startLineNumber: error.line,
+      startColumn: error.column,
+      endLineNumber: error.line,
+      endColumn: model.getLineMaxColumn(error.line),
+      message: error.message,
+      source: 'OpenSCAD',
+    }));
+
+    monaco.editor.setModelMarkers(model, 'openscad-linter', markers);
+  }, [lintErrors]);
 
   const handleChange: OnChange = useCallback((value) => {
     onChange(value || '');
@@ -135,6 +165,7 @@ export function ScadEditor({ code, onChange, onSelectionChange, fontSize = 14 }:
           renderLineHighlight: 'line',
           cursorBlinking: 'smooth',
           smoothScrolling: true,
+          glyphMargin: true, // Enable glyph margin for error icons
         }}
       />
     </div>
