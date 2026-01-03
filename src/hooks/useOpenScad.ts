@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { renderScadToSTL, preloadOpenSCAD, getLoadingStatus, RenderResult } from '@/lib/openscad-service';
+import { lintOpenSCAD, parseOpenSCADErrors, formatLintErrors, LintError } from '@/lib/openscad-linter';
 import { STLMesh } from '@/types/openscad';
 
 interface UseOpenScadResult {
@@ -7,6 +8,7 @@ interface UseOpenScadResult {
   isRendering: boolean;
   isLoading: boolean;
   error: string | null;
+  lintErrors: LintError[];
   logs: string[];
   render: (code: string) => void;
 }
@@ -16,6 +18,7 @@ export function useOpenScad(autoRender: boolean = true, debounceMs: number = 100
   const [isRendering, setIsRendering] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lintErrors, setLintErrors] = useState<LintError[]>([]);
   const [logs, setLogs] = useState<string[]>([]);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastCodeRef = useRef<string>('');
@@ -53,6 +56,20 @@ export function useOpenScad(autoRender: boolean = true, debounceMs: number = 100
     if (!code.trim()) {
       setMesh(null);
       setError(null);
+      setLintErrors([]);
+      return;
+    }
+
+    // Run linter first for quick feedback
+    const lintResult = lintOpenSCAD(code);
+    setLintErrors(lintResult.errors);
+
+    // If there are critical lint errors, don't try to render
+    const hasLintErrors = lintResult.errors.some(e => e.severity === 'error');
+    if (hasLintErrors) {
+      setError(formatLintErrors(lintResult.errors.filter(e => e.severity === 'error')));
+      setMesh(null);
+      setIsRendering(false);
       return;
     }
 
@@ -65,8 +82,14 @@ export function useOpenScad(autoRender: boolean = true, debounceMs: number = 100
       if (result.success && result.mesh) {
         setMesh(result.mesh);
         setError(null);
+        setLintErrors([]);
       } else {
         setError(result.error || 'Rendering failed');
+        // Parse OpenSCAD errors and add to lint errors
+        if (result.logs && result.logs.length > 0) {
+          const compilerErrors = parseOpenSCADErrors(result.logs.join('\n'));
+          setLintErrors(prev => [...prev, ...compilerErrors]);
+        }
       }
       
       if (result.logs) {
@@ -111,6 +134,7 @@ export function useOpenScad(autoRender: boolean = true, debounceMs: number = 100
     isRendering,
     isLoading,
     error,
+    lintErrors,
     logs,
     render: autoRender ? debouncedRender : render,
   };
