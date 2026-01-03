@@ -10,6 +10,7 @@ import { SettingsPanel } from '@/components/SettingsPanel';
 import { STLUploader } from '@/components/STLUploader';
 import { useSettings } from '@/hooks/useSettings';
 import { useOpenScad } from '@/hooks/useOpenScad';
+import { formatLintErrors } from '@/lib/openscad-linter';
 import { OPENSCAD_TEMPLATE, AIMessage, STLMesh } from '@/types/openscad';
 
 export default function Index() {
@@ -21,7 +22,14 @@ export default function Index() {
   const [showAIPanel, setShowAIPanel] = useState(true);
   
   // Full OpenSCAD WASM rendering with 1.5s debounce
-  const { mesh: renderedMesh, isRendering, isLoading, error, render } = useOpenScad(true, 1500);
+  const { mesh: renderedMesh, isRendering, isLoading, error, lintErrors, render } = useOpenScad(true, 1500);
+
+  // Format errors for AI context
+  const formattedErrors = error 
+    ? `${error}${lintErrors.length > 0 ? '\n\nLint Errors:\n' + formatLintErrors(lintErrors) : ''}`
+    : lintErrors.length > 0 
+      ? formatLintErrors(lintErrors) 
+      : null;
 
   // Trigger render when code changes
   useEffect(() => {
@@ -142,7 +150,7 @@ export default function Index() {
                       settings={settings}
                       code={code}
                       selectedText={selectedText}
-                      compileError={error}
+                      compileError={formattedErrors}
                       onCodeUpdate={setCode}
                       onAddMessage={handleAddMessage}
                     />
