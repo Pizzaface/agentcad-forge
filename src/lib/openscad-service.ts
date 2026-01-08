@@ -79,7 +79,6 @@ export async function renderScadToSTL(code: string): Promise<STLMesh> {
     try {
       exitCode = rawInstance.callMain([
         "/input.scad", 
-        "--enable=manifold",
         "-o", 
         "/output.stl"
       ]);
