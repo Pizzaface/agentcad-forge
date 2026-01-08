@@ -86,30 +86,22 @@ export function STLUploader({ onCodeGenerated, onMeshLoaded }: STLUploaderProps)
   }, [processFile]);
 
   return (
-    <div
-      className={cn(
-        'relative flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-4 transition-colors',
-        isDragging
-          ? 'border-primary bg-primary/10'
-          : 'border-muted-foreground/30 hover:border-muted-foreground/50',
-        isProcessing && 'pointer-events-none opacity-50'
-      )}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
+    <Button
+      variant="outline"
+      size="sm"
+      disabled={isProcessing}
+      className="gap-1"
+      asChild
     >
-      {isProcessing ? (
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      ) : (
-        <FileUp className="h-6 w-6 text-muted-foreground" />
-      )}
-      <p className="mt-2 text-xs text-muted-foreground">
-        {isProcessing ? 'Processing...' : 'Drop STL file or'}
-      </p>
-      <label className="mt-1 cursor-pointer">
-        <Button variant="link" size="sm" className="h-auto p-0 text-xs" asChild>
-          <span>browse</span>
-        </Button>
+      <label className="cursor-pointer">
+        {isProcessing ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <Upload className="h-4 w-4" />
+        )}
+        <span className="hidden sm:inline">
+          {isProcessing ? 'Processing...' : 'Import STL'}
+        </span>
         <input
           type="file"
           accept=".stl"
@@ -118,6 +110,6 @@ export function STLUploader({ onCodeGenerated, onMeshLoaded }: STLUploaderProps)
           disabled={isProcessing}
         />
       </label>
-    </div>
+    </Button>
   );
 }
