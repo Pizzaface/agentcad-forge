@@ -57,14 +57,22 @@ async function renderScadToSTL(code: string, id: string) {
       try {
         instance.callMain(["/input.scad", "--enable=manifold", "-o", "/output.stl"]);
       } catch (mainError: any) {
-        console.warn('[Worker] callMain threw:', mainError);
+        console.warn('[Worker] callMain threw:', mainError, typeof mainError);
         thrownError = mainError;
         
-        // Check if it's an abort (memory/CGAL issue)
-        if (mainError?.message?.includes('memory') || 
-            mainError?.message?.includes('bad_alloc') ||
-            mainError?.message?.includes('abort')) {
-          self.postMessage({ type: 'abort', reason: String(mainError) });
+        // Emscripten ExitStatus is often just a number or has .status
+        const isExitStatus = mainError?.name === 'ExitStatus' || 
+                             mainError?.constructor?.name === 'ExitStatus' ||
+                             typeof mainError === 'number';
+        
+        if (isExitStatus) {
+          const status = typeof mainError === 'number' ? mainError : mainError?.status;
+          console.warn('[Worker] ExitStatus:', status);
+          // Don't fail yet - check if output file exists
+        } else if (mainError?.message?.includes('memory') || 
+                   mainError?.message?.includes('bad_alloc') ||
+                   mainError?.message?.includes('abort')) {
+          self.postMessage({ type: 'abort', reason: String(mainError?.message || mainError) });
         }
       }
 
@@ -74,9 +82,18 @@ async function renderScadToSTL(code: string, id: string) {
         stlBytes = instance.FS.readFile("/output.stl") as Uint8Array;
       } catch (readErr) {
         // No output file - this is a real failure
-        const errorMsg = thrownError 
-          ? String(thrownError?.message || thrownError)
-          : (stderrLogs.length > 0 ? stderrLogs.join('\n') : 'No output generated');
+        // Format a meaningful error message from stderr or the exception
+        let errorMsg = 'No output generated';
+        if (stderrLogs.length > 0) {
+          // Filter out informational lines, keep actual errors
+          const errorLines = stderrLogs.filter(line => 
+            line.includes('ERROR') || 
+            line.includes('error') || 
+            line.includes('Warning:') ||
+            line.includes('syntax error')
+          );
+          errorMsg = errorLines.length > 0 ? errorLines.join('\n') : stderrLogs.slice(-5).join('\n');
+        }
         throw new Error(errorMsg);
       }
 
