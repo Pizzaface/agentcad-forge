@@ -7,12 +7,6 @@ let initPromise: Promise<OpenSCADInstance> | null = null;
 let loadingProgress: 'idle' | 'loading' | 'ready' | 'error' = 'idle';
 let errorLogs: string[] = [];
 
-export interface RenderResult {
-  success: boolean;
-  mesh?: STLMesh;
-  error?: string;
-  logs?: string[];
-}
 
 export function getLoadingStatus() {
   return loadingProgress;
@@ -53,21 +47,30 @@ export async function initOpenSCAD(): Promise<OpenSCADInstance> {
   return initPromise;
 }
 
-export async function renderScadToSTL(code: string): Promise<RenderResult> {
-  const logs: string[] = [];
-  const renderErrorLogs: string[] = []; // Local error logs for this render
+export class OpenSCADError extends Error {
+  logs: string[];
+  
+  constructor(message: string, logs: string[] = []) {
+    super(message);
+    this.name = 'OpenSCADError';
+    this.logs = logs;
+  }
+}
+
+export async function renderScadToSTL(code: string): Promise<STLMesh> {
+  const renderErrorLogs: string[] = [];
+  
+  const instance = await initOpenSCAD();
+  const rawInstance = instance.getInstance();
+  
+  // Override printErr temporarily to capture errors for this render
+  const originalPrintErr = rawInstance.printErr;
+  rawInstance.printErr = (text: string) => {
+    console.warn('[OpenSCAD Error]', text);
+    renderErrorLogs.push(text);
+  };
   
   try {
-    const instance = await initOpenSCAD();
-    const rawInstance = instance.getInstance();
-    
-    // Override printErr temporarily to capture errors for this render
-    const originalPrintErr = rawInstance.printErr;
-    rawInstance.printErr = (text: string) => {
-      console.warn('[OpenSCAD Error]', text);
-      renderErrorLogs.push(text);
-    };
-    
     // Write code to input file
     rawInstance.FS.writeFile("/input.scad", code);
     
@@ -84,11 +87,6 @@ export async function renderScadToSTL(code: string): Promise<RenderResult> {
       // callMain throws the exit code as a number on error
       console.error('[OpenSCAD] callMain threw:', mainError);
       exitCode = typeof mainError === 'number' ? mainError : 1;
-    } finally {
-      // Restore original printErr
-      if (originalPrintErr) {
-        rawInstance.printErr = originalPrintErr;
-      }
     }
     
     // Check for errors
@@ -97,18 +95,7 @@ export async function renderScadToSTL(code: string): Promise<RenderResult> {
         ? renderErrorLogs.join('\n') 
         : `OpenSCAD exited with code ${exitCode}`;
       
-      // Cleanup input file
-      try {
-        rawInstance.FS.unlink("/input.scad");
-      } catch (e) {
-        // Ignore cleanup errors
-      }
-      
-      return {
-        success: false,
-        error: errorMsg,
-        logs: renderErrorLogs,
-      };
+      throw new OpenSCADError(errorMsg, renderErrorLogs);
     }
     
     // Try to read output file
@@ -119,28 +106,12 @@ export async function renderScadToSTL(code: string): Promise<RenderResult> {
       const errorMsg = renderErrorLogs.length > 0 
         ? renderErrorLogs.join('\n') 
         : 'No output generated. The model may be empty or have errors.';
-      return {
-        success: false,
-        error: errorMsg,
-        logs: renderErrorLogs,
-      };
+      throw new OpenSCADError(errorMsg, renderErrorLogs);
     }
     
     // Check if STL is empty or has no geometry
     if (!stlContent || stlContent.trim().length < 50) {
-      return {
-        success: false,
-        error: 'No geometry generated. Check your OpenSCAD code.',
-        logs: renderErrorLogs,
-      };
-    }
-    
-    // Cleanup
-    try {
-      rawInstance.FS.unlink("/input.scad");
-      rawInstance.FS.unlink("/output.stl");
-    } catch (e) {
-      // Ignore cleanup errors
+      throw new OpenSCADError('No geometry generated. Check your OpenSCAD code.', renderErrorLogs);
     }
     
     // Parse the STL string into mesh data
@@ -150,32 +121,23 @@ export async function renderScadToSTL(code: string): Promise<RenderResult> {
     
     // Verify mesh has vertices
     if (!mesh.vertices || mesh.vertices.length === 0) {
-      return {
-        success: false,
-        error: 'Generated STL has no geometry.',
-        logs: renderErrorLogs,
-      };
+      throw new OpenSCADError('Generated STL has no geometry.', renderErrorLogs);
     }
     
-    return {
-      success: true,
-      mesh,
-      logs,
-    };
-  } catch (error) {
-    console.error('[OpenSCAD] renderScadToSTL error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return mesh;
+  } finally {
+    // Restore original printErr
+    if (originalPrintErr) {
+      rawInstance.printErr = originalPrintErr;
+    }
     
-    // Include any OpenSCAD error output
-    const fullError = renderErrorLogs.length > 0 
-      ? `${errorMessage}\n\n${renderErrorLogs.join('\n')}`
-      : errorMessage;
-    
-    return {
-      success: false,
-      error: fullError,
-      logs: renderErrorLogs,
-    };
+    // Cleanup
+    try {
+      rawInstance.FS.unlink("/input.scad");
+    } catch (e) { /* ignore */ }
+    try {
+      rawInstance.FS.unlink("/output.stl");
+    } catch (e) { /* ignore */ }
   }
 }
 

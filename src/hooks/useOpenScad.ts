@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { renderScadToSTL, validateScadCode, preloadOpenSCAD, getLoadingStatus, RenderResult } from '@/lib/openscad-service';
+import { renderScadToSTL, validateScadCode, preloadOpenSCAD, getLoadingStatus, OpenSCADError } from '@/lib/openscad-service';
 import { lintOpenSCAD, parseOpenSCADErrors, formatLintErrors, LintError } from '@/lib/openscad-linter';
 import { STLMesh } from '@/types/openscad';
 
@@ -99,26 +99,23 @@ export function useOpenScad(autoRender: boolean = true, debounceMs: number = 100
     setError(null);
 
     try {
-      const result: RenderResult = await renderScadToSTL(code);
-      
-      if (result.success && result.mesh) {
-        setMesh(result.mesh);
-        setError(null);
-        setLintErrors([]);
-      } else {
-        setError(result.error || 'Rendering failed');
+      const mesh = await renderScadToSTL(code);
+      setMesh(mesh);
+      setError(null);
+      setLintErrors([]);
+      setLogs([]);
+    } catch (err) {
+      if (err instanceof OpenSCADError) {
+        setError(err.message);
+        setLogs(err.logs);
         // Parse OpenSCAD errors and add to lint errors
-        if (result.logs && result.logs.length > 0) {
-          const compilerErrors = parseOpenSCADErrors(result.logs.join('\n'));
+        if (err.logs.length > 0) {
+          const compilerErrors = parseOpenSCADErrors(err.logs.join('\n'));
           setLintErrors(prev => [...prev, ...compilerErrors]);
         }
+      } else {
+        setError(err instanceof Error ? err.message : 'Unknown error');
       }
-      
-      if (result.logs) {
-        setLogs(result.logs);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setIsRendering(false);
     }
