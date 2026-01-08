@@ -1,30 +1,31 @@
-import { createOpenSCAD, OpenSCADInstance } from 'openscad-wasm';
+import { createOpenSCAD } from 'openscad-wasm';
+import type { OpenSCAD } from 'openscad-wasm';
 import { parseSTL } from './stl-parser';
 
-let openscadInstance: OpenSCADInstance | null = null;
-let initPromise: Promise<OpenSCADInstance> | null = null;
+let openscadRaw: OpenSCAD | null = null;
+let initPromise: Promise<OpenSCAD> | null = null;
 
 type MessageType = 
   | { type: 'init' }
   | { type: 'render'; code: string; id: string }
   | { type: 'validate'; code: string; id: string };
 
-async function initOpenSCAD(): Promise<OpenSCADInstance> {
-  if (openscadInstance) return openscadInstance;
+async function initOpenSCAD(): Promise<OpenSCAD> {
+  if (openscadRaw) return openscadRaw;
   if (initPromise) return initPromise;
 
   initPromise = createOpenSCAD({
     noInitialRun: true,
-    print: (text) => {
+    print: (text: string) => {
       self.postMessage({ type: 'log', text });
     },
-    printErr: (text) => {
+    printErr: (text: string) => {
       self.postMessage({ type: 'error-log', text });
     },
   }).then((instance) => {
-    openscadInstance = instance;
+    openscadRaw = instance.getInstance();
     self.postMessage({ type: 'ready' });
-    return instance;
+    return openscadRaw;
   });
 
   return initPromise;
@@ -35,20 +36,19 @@ async function renderScadToSTL(code: string, id: string) {
   
   try {
     const instance = await initOpenSCAD();
-    const rawInstance = instance.getInstance();
     
-    const originalPrintErr = rawInstance.printErr;
-    rawInstance.printErr = (text: string) => {
+    const originalPrintErr = instance.printErr;
+    instance.printErr = (text: string) => {
       logs.push(text);
       self.postMessage({ type: 'error-log', text });
     };
 
     try {
-      rawInstance.FS.writeFile("/input.scad", code);
+      instance.FS.writeFile("/input.scad", code);
       
       let exitCode: number;
       try {
-        exitCode = rawInstance.callMain(["/input.scad", "-o", "/output.stl"]);
+        exitCode = instance.callMain(["/input.scad", "--enable=manifold", "-o", "/output.stl"]);
       } catch (mainError) {
         exitCode = typeof mainError === 'number' ? mainError : 1;
       }
@@ -59,7 +59,7 @@ async function renderScadToSTL(code: string, id: string) {
 
       let stlContent: string;
       try {
-        stlContent = rawInstance.FS.readFile("/output.stl", { encoding: "utf8" }) as string;
+        stlContent = instance.FS.readFile("/output.stl", { encoding: "utf8" }) as string;
       } catch {
         throw new Error(logs.length > 0 ? logs.join('\n') : 'No output generated.');
       }
@@ -78,9 +78,9 @@ async function renderScadToSTL(code: string, id: string) {
 
       self.postMessage({ type: 'render-result', id, mesh, logs });
     } finally {
-      if (originalPrintErr) rawInstance.printErr = originalPrintErr;
-      try { rawInstance.FS.unlink("/input.scad"); } catch {}
-      try { rawInstance.FS.unlink("/output.stl"); } catch {}
+      if (originalPrintErr) instance.printErr = originalPrintErr;
+      try { instance.FS.unlink("/input.scad"); } catch {}
+      try { instance.FS.unlink("/output.stl"); } catch {}
     }
   } catch (error) {
     self.postMessage({ 
@@ -97,25 +97,24 @@ async function validateCode(code: string, id: string) {
   
   try {
     const instance = await initOpenSCAD();
-    const rawInstance = instance.getInstance();
     
-    const originalPrintErr = rawInstance.printErr;
-    rawInstance.printErr = (text: string) => {
+    const originalPrintErr = instance.printErr;
+    instance.printErr = (text: string) => {
       errors.push(text);
     };
 
-    rawInstance.FS.writeFile("/validate.scad", code);
+    instance.FS.writeFile("/validate.scad", code);
     
     let exitCode: number;
     try {
-      exitCode = rawInstance.callMain(["/validate.scad", "--preview", "-o", "/dev/null"]);
+      exitCode = instance.callMain(["/validate.scad", "--preview", "-o", "/dev/null"]);
     } catch (mainError) {
       exitCode = typeof mainError === 'number' ? mainError : 1;
     } finally {
-      if (originalPrintErr) rawInstance.printErr = originalPrintErr;
+      if (originalPrintErr) instance.printErr = originalPrintErr;
     }
 
-    try { rawInstance.FS.unlink("/validate.scad"); } catch {}
+    try { instance.FS.unlink("/validate.scad"); } catch {}
 
     self.postMessage({
       type: 'validate-result',
