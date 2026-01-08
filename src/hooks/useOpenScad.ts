@@ -105,6 +105,7 @@ export function useOpenScad(autoRender: boolean = true, debounceMs: number = 100
       setLintErrors([]);
       setLogs([]);
     } catch (err) {
+      console.error('[useOpenScad] Render error:', err);
       if (err instanceof OpenSCADError) {
         setError(err.message);
         setLogs(err.logs);
@@ -114,7 +115,7 @@ export function useOpenScad(autoRender: boolean = true, debounceMs: number = 100
           setLintErrors(prev => [...prev, ...compilerErrors]);
         }
       } else {
-        setError(err instanceof Error ? err.message : 'Unknown error');
+        setError(err instanceof Error ? err.message : String(err));
       }
     } finally {
       setIsRendering(false);
