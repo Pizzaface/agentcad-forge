@@ -8,6 +8,7 @@ interface ModelViewerProps {
   meshData: STLMesh | null;
   isRendering?: boolean;
   error?: string | null;
+  logs?: string[];
   autoFit?: boolean;
 }
 
@@ -111,7 +112,7 @@ const PlaceholderModel = forwardRef<THREE.Group>((_, ref) => {
 });
 PlaceholderModel.displayName = 'PlaceholderModel';
 
-export function ModelViewer({ meshData, isRendering, error, autoFit = true }: ModelViewerProps) {
+export function ModelViewer({ meshData, isRendering, error, logs = [], autoFit = true }: ModelViewerProps) {
   const renderContent = () => {
     if (isRendering) {
       return <LoadingIndicator />;
@@ -172,10 +173,16 @@ export function ModelViewer({ meshData, isRendering, error, autoFit = true }: Mo
       </div>
       
       {/* Error overlay */}
-      {error && (
-        <div className="absolute top-3 left-3 right-3 max-h-32 overflow-auto rounded bg-destructive/90 px-3 py-2 text-xs text-destructive-foreground backdrop-blur-sm">
-          <div className="font-medium mb-1">OpenSCAD Error:</div>
-          <pre className="whitespace-pre-wrap font-mono text-xs">{error}</pre>
+      {(error || logs.length > 0) && (
+        <div className="absolute top-3 left-3 right-3 max-h-48 overflow-auto rounded bg-destructive/90 px-3 py-2 text-xs text-destructive-foreground backdrop-blur-sm">
+          <div className="font-medium mb-1">OpenSCAD Output:</div>
+          {error && <pre className="whitespace-pre-wrap font-mono text-xs mb-2">{error}</pre>}
+          {logs.length > 0 && (
+            <details className="mt-1">
+              <summary className="cursor-pointer hover:underline font-medium">Detailed logs ({logs.length} lines)</summary>
+              <pre className="whitespace-pre-wrap font-mono text-xs mt-1 opacity-90">{logs.join('\n')}</pre>
+            </details>
+          )}
         </div>
       )}
     </div>
