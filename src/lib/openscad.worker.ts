@@ -20,6 +20,7 @@ async function initOpenSCAD(): Promise<OpenSCAD> {
       self.postMessage({ type: 'log', text });
     },
     printErr: (text: string) => {
+      // Don't treat stderr as fatal - OpenSCAD prints status info there
       self.postMessage({ type: 'error-log', text });
     },
   }).then((instance) => {
@@ -46,26 +47,33 @@ async function renderScadToSTL(code: string, id: string) {
     try {
       instance.FS.writeFile("/input.scad", code);
       
-      let exitCode: number;
+      // Run OpenSCAD - handle Emscripten ExitStatus properly
       try {
-        exitCode = instance.callMain(["/input.scad", "--enable=manifold", "-o", "/output.stl"]);
-      } catch (mainError) {
-        exitCode = typeof mainError === 'number' ? mainError : 1;
+        instance.callMain(["/input.scad", "--enable=manifold", "-o", "/output.stl"]);
+      } catch (mainError: any) {
+        // Emscripten throws ExitStatus for normal exits
+        if (mainError?.name === 'ExitStatus' || mainError?.constructor?.name === 'ExitStatus') {
+          // Non-zero exit status is an error
+          if (mainError.status !== 0) {
+            throw new Error(logs.length > 0 ? logs.join('\n') : `OpenSCAD exited with code ${mainError.status}`);
+          }
+          // status === 0 means success, continue
+        } else {
+          // Real error/abort
+          throw mainError;
+        }
       }
 
-      if (exitCode !== 0) {
-        throw new Error(logs.length > 0 ? logs.join('\n') : `OpenSCAD exited with code ${exitCode}`);
-      }
-
+      // Validate success by checking output file exists and has content
       let stlContent: string;
       try {
         stlContent = instance.FS.readFile("/output.stl", { encoding: "utf8" }) as string;
       } catch {
-        throw new Error(logs.length > 0 ? logs.join('\n') : 'No output generated.');
+        throw new Error(logs.length > 0 ? logs.join('\n') : 'No output generated - check your OpenSCAD code.');
       }
 
       if (!stlContent || stlContent.trim().length < 50) {
-        throw new Error('No geometry generated.');
+        throw new Error(logs.length > 0 ? logs.join('\n') : 'No geometry generated - model may be empty.');
       }
 
       const encoder = new TextEncoder();
@@ -105,11 +113,16 @@ async function validateCode(code: string, id: string) {
 
     instance.FS.writeFile("/validate.scad", code);
     
-    let exitCode: number;
+    let valid = true;
     try {
-      exitCode = instance.callMain(["/validate.scad", "--preview", "-o", "/dev/null"]);
-    } catch (mainError) {
-      exitCode = typeof mainError === 'number' ? mainError : 1;
+      instance.callMain(["/validate.scad", "--preview", "-o", "/dev/null"]);
+    } catch (mainError: any) {
+      if (mainError?.name === 'ExitStatus' || mainError?.constructor?.name === 'ExitStatus') {
+        valid = mainError.status === 0;
+      } else {
+        valid = false;
+        errors.push(mainError?.message || String(mainError));
+      }
     } finally {
       if (originalPrintErr) instance.printErr = originalPrintErr;
     }
@@ -119,7 +132,7 @@ async function validateCode(code: string, id: string) {
     self.postMessage({
       type: 'validate-result',
       id,
-      valid: exitCode === 0 && errors.length === 0,
+      valid: valid && errors.length === 0,
       errors
     });
   } catch (error) {
