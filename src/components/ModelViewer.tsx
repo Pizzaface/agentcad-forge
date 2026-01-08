@@ -79,18 +79,19 @@ const MeshModel = forwardRef<THREE.Group, MeshModelProps>(({ meshData, autoFit =
 });
 MeshModel.displayName = 'MeshModel';
 
-function LoadingIndicator() {
+const LoadingIndicator = forwardRef<THREE.Mesh>((_, ref) => {
   return (
-    <mesh>
+    <mesh ref={ref}>
       <boxGeometry args={[2, 2, 2]} />
       <meshStandardMaterial color="#4a9eff" wireframe />
     </mesh>
   );
-}
+});
+LoadingIndicator.displayName = 'LoadingIndicator';
 
-function PlaceholderModel() {
+const PlaceholderModel = forwardRef<THREE.Group>((_, ref) => {
   return (
-    <group>
+    <group ref={ref}>
       <mesh position={[0, 0, 0]}>
         <boxGeometry args={[10, 10, 10]} />
         <meshStandardMaterial
@@ -107,7 +108,8 @@ function PlaceholderModel() {
       </mesh>
     </group>
   );
-}
+});
+PlaceholderModel.displayName = 'PlaceholderModel';
 
 export function ModelViewer({ meshData, isRendering, error, autoFit = true }: ModelViewerProps) {
   const renderContent = () => {
