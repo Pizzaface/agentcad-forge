@@ -21,7 +21,7 @@ async function initOpenSCAD(): Promise<OpenSCAD> {
     },
     printErr: (text: string) => {
       // Don't treat stderr as fatal - OpenSCAD prints status info there
-      self.postMessage({ type: 'error-log', text });
+      self.postMessage({ type: 'stderr', text });
     },
   }).then((instance) => {
     openscadRaw = instance.getInstance();
@@ -33,70 +33,87 @@ async function initOpenSCAD(): Promise<OpenSCAD> {
 }
 
 async function renderScadToSTL(code: string, id: string) {
-  const logs: string[] = [];
+  const stderrLogs: string[] = [];
   
   try {
     const instance = await initOpenSCAD();
     
+    // Capture stderr for this render
     const originalPrintErr = instance.printErr;
     instance.printErr = (text: string) => {
-      logs.push(text);
-      self.postMessage({ type: 'error-log', text });
+      stderrLogs.push(text);
+      self.postMessage({ type: 'stderr', text });
     };
 
     try {
+      // Cleanup old files
+      try { instance.FS.unlink("/input.scad"); } catch {}
+      try { instance.FS.unlink("/output.stl"); } catch {}
+      
       instance.FS.writeFile("/input.scad", code);
       
-      // Run OpenSCAD - handle Emscripten ExitStatus properly
+      // Run OpenSCAD - capture any thrown errors but don't fail yet
+      let thrownError: any = null;
       try {
         instance.callMain(["/input.scad", "--enable=manifold", "-o", "/output.stl"]);
       } catch (mainError: any) {
-        // Emscripten throws ExitStatus for normal exits
-        if (mainError?.name === 'ExitStatus' || mainError?.constructor?.name === 'ExitStatus') {
-          // Non-zero exit status is an error
-          if (mainError.status !== 0) {
-            throw new Error(logs.length > 0 ? logs.join('\n') : `OpenSCAD exited with code ${mainError.status}`);
-          }
-          // status === 0 means success, continue
-        } else {
-          // Real error/abort
-          throw mainError;
+        console.warn('[Worker] callMain threw:', mainError);
+        thrownError = mainError;
+        
+        // Check if it's an abort (memory/CGAL issue)
+        if (mainError?.message?.includes('memory') || 
+            mainError?.message?.includes('bad_alloc') ||
+            mainError?.message?.includes('abort')) {
+          self.postMessage({ type: 'abort', reason: String(mainError) });
         }
       }
 
-      // Validate success by checking output file exists and has content
-      let stlContent: string;
+      // SUCCESS IS DETERMINED BY OUTPUT FILE EXISTENCE, NOT EXIT CODE
+      let stlBytes: Uint8Array;
       try {
-        stlContent = instance.FS.readFile("/output.stl", { encoding: "utf8" }) as string;
-      } catch {
-        throw new Error(logs.length > 0 ? logs.join('\n') : 'No output generated - check your OpenSCAD code.');
+        stlBytes = instance.FS.readFile("/output.stl") as Uint8Array;
+      } catch (readErr) {
+        // No output file - this is a real failure
+        const errorMsg = thrownError 
+          ? String(thrownError?.message || thrownError)
+          : (stderrLogs.length > 0 ? stderrLogs.join('\n') : 'No output generated');
+        throw new Error(errorMsg);
       }
 
-      if (!stlContent || stlContent.trim().length < 50) {
-        throw new Error(logs.length > 0 ? logs.join('\n') : 'No geometry generated - model may be empty.');
+      // Check file has content
+      if (!stlBytes || stlBytes.byteLength === 0) {
+        throw new Error('Output file exists but is empty');
       }
 
-      const encoder = new TextEncoder();
-      const buffer = encoder.encode(stlContent).buffer;
-      const mesh = parseSTL(buffer);
+      // Parse STL
+      const buffer = stlBytes.buffer.slice(stlBytes.byteOffset, stlBytes.byteOffset + stlBytes.byteLength);
+      const mesh = parseSTL(buffer as ArrayBuffer);
 
       if (!mesh.vertices || mesh.vertices.length === 0) {
-        throw new Error('Generated STL has no geometry.');
+        throw new Error('Generated STL has no geometry');
       }
 
-      self.postMessage({ type: 'render-result', id, mesh, logs });
+      // SUCCESS - even if there were warnings in stderr
+      self.postMessage({ 
+        type: 'render-result', 
+        id, 
+        mesh, 
+        logs: stderrLogs,
+        byteLength: stlBytes.byteLength 
+      });
+      
     } finally {
       if (originalPrintErr) instance.printErr = originalPrintErr;
       try { instance.FS.unlink("/input.scad"); } catch {}
       try { instance.FS.unlink("/output.stl"); } catch {}
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Worker] Render error:', error);
     self.postMessage({ 
       type: 'render-error', 
       id, 
-      error: error instanceof Error ? error.message : String(error),
-      logs 
+      error: error?.message || String(error),
+      logs: stderrLogs 
     });
   }
 }
