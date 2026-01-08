@@ -1,4 +1,4 @@
-import { Suspense, useMemo, useRef, useEffect } from 'react';
+import { Suspense, useMemo, useEffect, forwardRef } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, Grid, Environment, PerspectiveCamera } from '@react-three/drei';
 import * as THREE from 'three';
@@ -11,10 +11,11 @@ interface ModelViewerProps {
   autoFit?: boolean;
 }
 
-function MeshModel({ meshData, autoFit = true }: { meshData: STLMesh; autoFit?: boolean }) {
+type MeshModelProps = { meshData: STLMesh; autoFit?: boolean };
+
+const MeshModel = forwardRef<THREE.Group, MeshModelProps>(({ meshData, autoFit = true }, ref) => {
   const { camera, controls } = useThree();
-  const groupRef = useRef<THREE.Group>(null);
-  
+
   const geometry = useMemo(() => {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(meshData.vertices, 3));
@@ -44,18 +45,14 @@ function MeshModel({ meshData, autoFit = true }: { meshData: STLMesh; autoFit?: 
     if (autoFit && geometry.boundingSphere && camera instanceof THREE.PerspectiveCamera) {
       const radius = geometry.boundingSphere.radius * scale;
       const fov = camera.fov * (Math.PI / 180);
-      const distance = radius / Math.sin(fov / 2) * 1.2;
-      
+      const distance = (radius / Math.sin(fov / 2)) * 1.2;
+
       // Position camera at a nice angle
       const angle = Math.PI / 4;
-      camera.position.set(
-        distance * Math.cos(angle),
-        distance * 0.6,
-        distance * Math.sin(angle)
-      );
+      camera.position.set(distance * Math.cos(angle), distance * 0.6, distance * Math.sin(angle));
       camera.lookAt(0, 0, 0);
       camera.updateProjectionMatrix();
-      
+
       // Update controls target
       if (controls && 'target' in controls) {
         (controls as any).target.set(0, 0, 0);
@@ -65,7 +62,7 @@ function MeshModel({ meshData, autoFit = true }: { meshData: STLMesh; autoFit?: 
   }, [geometry, scale, autoFit, camera, controls]);
 
   return (
-    <group ref={groupRef} scale={scale} position={centerOffset.clone().multiplyScalar(scale)}>
+    <group ref={ref} scale={scale} position={centerOffset.clone().multiplyScalar(scale)}>
       <mesh geometry={geometry}>
         <meshStandardMaterial
           color="#4a9eff"
@@ -75,16 +72,12 @@ function MeshModel({ meshData, autoFit = true }: { meshData: STLMesh; autoFit?: 
         />
       </mesh>
       <mesh geometry={geometry}>
-        <meshBasicMaterial
-          color="#1a1a2e"
-          wireframe
-          transparent
-          opacity={0.1}
-        />
+        <meshBasicMaterial color="#1a1a2e" wireframe transparent opacity={0.1} />
       </mesh>
     </group>
   );
-}
+});
+MeshModel.displayName = 'MeshModel';
 
 function LoadingIndicator() {
   return (
@@ -110,11 +103,7 @@ function PlaceholderModel() {
       </mesh>
       <mesh position={[0, 0, 0]} rotation={[Math.PI / 2, 0, 0]}>
         <cylinderGeometry args={[3, 3, 12, 32]} />
-        <meshStandardMaterial
-          color="#1a2030"
-          metalness={0.1}
-          roughness={0.8}
-        />
+        <meshStandardMaterial color="#1a2030" metalness={0.1} roughness={0.8} />
       </mesh>
     </group>
   );
