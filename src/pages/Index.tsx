@@ -13,13 +13,52 @@ import { useOpenScad } from '@/hooks/useOpenScad';
 import { formatLintErrors } from '@/lib/openscad-linter';
 import { OPENSCAD_TEMPLATE, AIMessage, STLMesh } from '@/types/openscad';
 
+const CODE_STORAGE_KEY = 'openscad-creator-code';
+const UI_STORAGE_KEY = 'openscad-creator-ui';
+
+function loadStoredCode(): string {
+  try {
+    const stored = localStorage.getItem(CODE_STORAGE_KEY);
+    return stored || OPENSCAD_TEMPLATE;
+  } catch {
+    return OPENSCAD_TEMPLATE;
+  }
+}
+
+function loadStoredUI(): { showAIPanel: boolean } {
+  try {
+    const stored = localStorage.getItem(UI_STORAGE_KEY);
+    return stored ? JSON.parse(stored) : { showAIPanel: true };
+  } catch {
+    return { showAIPanel: true };
+  }
+}
+
 export default function Index() {
   const { settings, updateSettings, updateProviderKey, updateProviderModel, toggleTheme } = useSettings();
-  const [code, setCode] = useState(OPENSCAD_TEMPLATE);
+  const [code, setCode] = useState(loadStoredCode);
   const [selectedText, setSelectedText] = useState('');
   const [uploadedMesh, setUploadedMesh] = useState<STLMesh | null>(null);
   const [messages, setMessages] = useState<AIMessage[]>([]);
-  const [showAIPanel, setShowAIPanel] = useState(true);
+  const [showAIPanel, setShowAIPanel] = useState(() => loadStoredUI().showAIPanel);
+  
+  // Save code to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(CODE_STORAGE_KEY, code);
+    } catch (e) {
+      console.warn('Failed to save code:', e);
+    }
+  }, [code]);
+
+  // Save UI state to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(UI_STORAGE_KEY, JSON.stringify({ showAIPanel }));
+    } catch (e) {
+      console.warn('Failed to save UI state:', e);
+    }
+  }, [showAIPanel]);
   
   // Full OpenSCAD WASM rendering with 1.5s debounce
   const { mesh: renderedMesh, isRendering, isLoading, error, lintErrors, logs, render, validate } = useOpenScad(true, 1500);
