@@ -91,10 +91,11 @@ async function renderScadToSTL(code: string, id: string) {
       try { instance.FS.unlink("/output.stl"); } catch {}
     }
   } catch (error) {
+    console.error('[Worker] Render error:', error);
     self.postMessage({ 
       type: 'render-error', 
       id, 
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: error instanceof Error ? error.message : String(error),
       logs 
     });
   }
