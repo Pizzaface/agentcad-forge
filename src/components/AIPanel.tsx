@@ -58,9 +58,17 @@ export function AIPanel({ settings, code, selectedText, compileError, onCodeUpda
       return `Thinking ${(settings.providers.claude.thinkingBudget / 1000).toFixed(0)}k`;
     }
     if (selectedProvider === 'openai' && settings.providers.openai.reasoningEffort !== 'off') {
-      return `Reasoning ${settings.providers.openai.reasoningEffort}`;
+      const apiType = settings.providers.openai.apiType === 'responses' ? 'Responses' : 'Completions';
+      return `${apiType} • Reasoning ${settings.providers.openai.reasoningEffort}`;
     }
     return '';
+  };
+
+  const getAPITypeLabel = () => {
+    if (selectedProvider === 'openai') {
+      return settings.providers.openai.apiType === 'responses' ? 'Responses API' : 'Completions API';
+    }
+    return null;
   };
 
   // Build the effective prompt, including compile error for 'fix' action
@@ -159,8 +167,13 @@ export function AIPanel({ settings, code, selectedText, compileError, onCodeUpda
       {/* Header */}
       <div className="border-b border-border bg-panel-header p-3">
         <div className="mb-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h3 className="text-sm font-semibold">AI Assistant</h3>
+            {selectedProvider === 'openai' && !isReasoningActive && (
+              <Badge variant="outline" className="text-xs">
+                {getAPITypeLabel()}
+              </Badge>
+            )}
             {isReasoningActive && (
               <Badge variant="secondary" className="gap-1 text-xs bg-primary/10 text-primary border-primary/20">
                 <Brain className="h-3 w-3" />

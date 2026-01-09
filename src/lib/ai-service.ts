@@ -1,4 +1,4 @@
-import { AIProvider, AIAction, AppSettings } from '@/types/openscad';
+import { AIProvider, AIAction, AppSettings, OpenAIAPIType } from '@/types/openscad';
 
 const SYSTEM_PROMPTS: Record<AIAction, string> = {
   generate: `You are an expert OpenSCAD programmer. Generate clean, well-commented OpenSCAD code based on the user's description. Use parametric design when appropriate.
@@ -63,8 +63,12 @@ export async function sendAIRequest(config: AIRequestConfig): Promise<string> {
     case 'gemini':
       return streamGeminiRequest(providerConfig.apiKey, providerConfig.model, systemPrompt, fullMessage, onChunk);
     case 'openai': {
-      const openaiConfig = providerConfig as { apiKey: string; model: string; reasoningEffort?: 'off' | 'low' | 'medium' | 'high' };
-      return streamOpenAIRequest(openaiConfig.apiKey, openaiConfig.model, systemPrompt, fullMessage, openaiConfig.reasoningEffort ?? 'off', onChunk);
+      const openaiConfig = providerConfig as { apiKey: string; model: string; reasoningEffort?: 'off' | 'low' | 'medium' | 'high'; apiType?: OpenAIAPIType };
+      const apiType = openaiConfig.apiType ?? 'completions';
+      if (apiType === 'responses') {
+        return streamOpenAIResponsesRequest(openaiConfig.apiKey, openaiConfig.model, systemPrompt, fullMessage, openaiConfig.reasoningEffort ?? 'off', onChunk);
+      }
+      return streamOpenAICompletionsRequest(openaiConfig.apiKey, openaiConfig.model, systemPrompt, fullMessage, openaiConfig.reasoningEffort ?? 'off', onChunk);
     }
     default:
       throw new Error(`Unknown provider: ${provider}`);
@@ -213,7 +217,7 @@ async function streamGeminiRequest(
   return fullText;
 }
 
-async function streamOpenAIRequest(
+async function streamOpenAICompletionsRequest(
   apiKey: string, 
   model: string, 
   systemPrompt: string, 
@@ -275,6 +279,78 @@ async function streamOpenAIRequest(
           if (content) {
             fullText += content;
             onChunk?.(content);
+          }
+        } catch {
+          // Skip invalid JSON
+        }
+      }
+    }
+  }
+
+  return fullText;
+}
+
+async function streamOpenAIResponsesRequest(
+  apiKey: string, 
+  model: string, 
+  systemPrompt: string, 
+  userMessage: string,
+  reasoningEffort: 'off' | 'low' | 'medium' | 'high',
+  onChunk?: (chunk: string) => void
+): Promise<string> {
+  // Build request body for Responses API
+  const body: Record<string, unknown> = {
+    model,
+    instructions: systemPrompt,
+    input: userMessage,
+    max_output_tokens: 4096,
+    stream: true,
+    store: false, // Don't store responses by default
+  };
+
+  // Add reasoning config if not 'off' (for gpt-5 and o-series models)
+  if (reasoningEffort !== 'off') {
+    body.reasoning = { effort: reasoningEffort };
+  }
+
+  const response = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(body),
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error?.message || 'OpenAI Responses API request failed');
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('No response body');
+
+  const decoder = new TextDecoder();
+  let fullText = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    const chunk = decoder.decode(value, { stream: true });
+    const lines = chunk.split('\n');
+
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        const data = line.slice(6);
+        if (data === '[DONE]') continue;
+        
+        try {
+          const parsed = JSON.parse(data);
+          // Responses API uses response.output_text.delta events
+          if (parsed.type === 'response.output_text.delta' && parsed.delta) {
+            fullText += parsed.delta;
+            onChunk?.(parsed.delta);
           }
         } catch {
           // Skip invalid JSON
