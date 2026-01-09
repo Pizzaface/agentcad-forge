@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Code2, Box, Bot, ChevronLeft, ChevronRight, FileCode2, Loader2 } from 'lucide-react';
+import { Code2, Box, Bot, ChevronLeft, ChevronRight, FileCode2, Loader2, Play } from 'lucide-react';
 import { ScadEditor } from '@/components/ScadEditor';
 import { ModelViewer } from '@/components/ModelViewer';
 import { AIPanel } from '@/components/AIPanel';
@@ -128,9 +128,25 @@ export default function Index() {
           {/* Editor panel */}
           <ResizablePanel defaultSize={40} minSize={25}>
             <div className="flex h-full flex-col">
-              <div className="flex h-9 items-center gap-2 border-b border-border bg-panel-header px-3">
-                <Code2 className="h-4 w-4 text-muted-foreground" />
-                <span className="text-xs font-medium">OpenSCAD Editor</span>
+              <div className="flex h-9 items-center justify-between border-b border-border bg-panel-header px-3">
+                <div className="flex items-center gap-2">
+                  <Code2 className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-xs font-medium">OpenSCAD Editor</span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => render(code)}
+                  disabled={isRendering || isLoading}
+                  className="h-6 gap-1 px-2 text-xs"
+                >
+                  {isRendering ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Play className="h-3 w-3" />
+                  )}
+                  Render
+                </Button>
               </div>
               <div className="flex-1 p-2">
                 <ScadEditor
