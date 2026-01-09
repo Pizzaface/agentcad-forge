@@ -185,7 +185,7 @@ export function AIPanel({ settings, code, selectedText, compileError, messages, 
                 {getReasoningLabel()}
               </Badge>
             )}
-            {messages.length > 0 && (
+            {messages?.length > 0 && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -269,7 +269,7 @@ export function AIPanel({ settings, code, selectedText, compileError, messages, 
               )}
 
               {/* Conversation history */}
-              {messages.map((msg, idx) => (
+              {(messages ?? []).map((msg, idx) => (
                 <div
                   key={idx}
                   className={cn(
@@ -296,7 +296,7 @@ export function AIPanel({ settings, code, selectedText, compileError, messages, 
               ))}
 
               {/* Current streaming response */}
-              {response && !messages.find(m => m.content === response) && (
+              {response && !(messages ?? []).find(m => m.content === response) && (
                 <div className="rounded-lg border border-border bg-card p-3 mr-4">
                   <div className="mb-2 flex items-center justify-between">
                     <Badge variant="secondary" className="text-xs">
