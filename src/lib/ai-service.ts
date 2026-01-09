@@ -56,12 +56,16 @@ export async function sendAIRequest(config: AIRequestConfig): Promise<string> {
   }
   
   switch (provider) {
-    case 'claude':
-      return streamClaudeRequest(providerConfig.apiKey, providerConfig.model, systemPrompt, fullMessage, onChunk);
+    case 'claude': {
+      const claudeConfig = providerConfig as { apiKey: string; model: string; thinkingBudget?: number };
+      return streamClaudeRequest(claudeConfig.apiKey, claudeConfig.model, systemPrompt, fullMessage, claudeConfig.thinkingBudget ?? 0, onChunk);
+    }
     case 'gemini':
       return streamGeminiRequest(providerConfig.apiKey, providerConfig.model, systemPrompt, fullMessage, onChunk);
-    case 'openai':
-      return streamOpenAIRequest(providerConfig.apiKey, providerConfig.model, systemPrompt, fullMessage, onChunk);
+    case 'openai': {
+      const openaiConfig = providerConfig as { apiKey: string; model: string; reasoningEffort?: 'off' | 'low' | 'medium' | 'high' };
+      return streamOpenAIRequest(openaiConfig.apiKey, openaiConfig.model, systemPrompt, fullMessage, openaiConfig.reasoningEffort ?? 'off', onChunk);
+    }
     default:
       throw new Error(`Unknown provider: ${provider}`);
   }
@@ -72,8 +76,26 @@ async function streamClaudeRequest(
   model: string, 
   systemPrompt: string, 
   userMessage: string,
+  thinkingBudget: number,
   onChunk?: (chunk: string) => void
 ): Promise<string> {
+  // Build request body with optional extended thinking
+  const body: Record<string, unknown> = {
+    model,
+    max_tokens: thinkingBudget > 0 ? Math.max(16000, thinkingBudget + 4096) : 4096,
+    system: systemPrompt,
+    messages: [{ role: 'user', content: userMessage }] as ClaudeMessage[],
+    stream: true,
+  };
+
+  // Add thinking config if enabled (budget_tokens must be >= 1024)
+  if (thinkingBudget >= 1024) {
+    body.thinking = {
+      type: 'enabled',
+      budget_tokens: thinkingBudget,
+    };
+  }
+
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -82,13 +104,7 @@ async function streamClaudeRequest(
       'anthropic-version': '2023-06-01',
       'anthropic-dangerous-direct-browser-access': 'true',
     },
-    body: JSON.stringify({
-      model,
-      max_tokens: 4096,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userMessage }] as ClaudeMessage[],
-      stream: true,
-    }),
+    body: JSON.stringify(body),
   });
   
   if (!response.ok) {
@@ -202,23 +218,32 @@ async function streamOpenAIRequest(
   model: string, 
   systemPrompt: string, 
   userMessage: string,
+  reasoningEffort: 'off' | 'low' | 'medium' | 'high',
   onChunk?: (chunk: string) => void
 ): Promise<string> {
+  // Build request body with optional reasoning effort
+  const body: Record<string, unknown> = {
+    model,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userMessage },
+    ],
+    max_completion_tokens: 4096,
+    stream: true,
+  };
+
+  // Add reasoning config if not 'off'
+  if (reasoningEffort !== 'off') {
+    body.reasoning = { effort: reasoningEffort };
+  }
+
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage },
-      ],
-      max_completion_tokens: 4096,
-      stream: true,
-    }),
+    body: JSON.stringify(body),
   });
   
   if (!response.ok) {

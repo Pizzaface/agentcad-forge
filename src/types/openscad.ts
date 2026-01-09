@@ -36,12 +36,14 @@ export interface ViewerState {
   error: string | null;
 }
 
+export type ReasoningEffort = 'off' | 'low' | 'medium' | 'high';
+
 export interface AppSettings {
   theme: 'light' | 'dark';
   providers: {
-    claude: { apiKey: string; model: string };
+    claude: { apiKey: string; model: string; thinkingBudget: number }; // 0 = off, else budget_tokens (min 1024)
     gemini: { apiKey: string; model: string };
-    openai: { apiKey: string; model: string };
+    openai: { apiKey: string; model: string; reasoningEffort: ReasoningEffort };
   };
   defaultProvider: AIProvider;
   editorFontSize: number;
@@ -50,9 +52,9 @@ export interface AppSettings {
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
   providers: {
-    claude: { apiKey: '', model: 'claude-sonnet-4-20250514' },
+    claude: { apiKey: '', model: 'claude-sonnet-4-20250514', thinkingBudget: 0 },
     gemini: { apiKey: '', model: 'gemini-2.5-flash' },
-    openai: { apiKey: '', model: 'gpt-5' },
+    openai: { apiKey: '', model: 'gpt-5', reasoningEffort: 'off' },
   },
   defaultProvider: 'claude',
   editorFontSize: 14,
