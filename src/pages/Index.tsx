@@ -35,7 +35,7 @@ function loadStoredUI(): { showAIPanel: boolean } {
 }
 
 export default function Index() {
-  const { settings, updateSettings, updateProviderKey, updateProviderModel, toggleTheme } = useSettings();
+  const { settings, updateSettings, updateProviderKey, updateProviderModel, updateClaudeThinkingBudget, updateOpenAIReasoningEffort, toggleTheme } = useSettings();
   const [code, setCode] = useState(loadStoredCode);
   const [selectedText, setSelectedText] = useState('');
   const [uploadedMesh, setUploadedMesh] = useState<STLMesh | null>(null);
@@ -117,6 +117,8 @@ export default function Index() {
             onUpdateSettings={updateSettings}
             onUpdateProviderKey={updateProviderKey}
             onUpdateProviderModel={updateProviderModel}
+            onUpdateClaudeThinkingBudget={updateClaudeThinkingBudget}
+            onUpdateOpenAIReasoningEffort={updateOpenAIReasoningEffort}
             onToggleTheme={toggleTheme}
           />
         </div>

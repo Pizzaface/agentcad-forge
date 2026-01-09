@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { AppSettings, DEFAULT_SETTINGS } from '@/types/openscad';
+import { AppSettings, DEFAULT_SETTINGS, AIProvider, ReasoningEffort } from '@/types/openscad';
 
 const STORAGE_KEY = 'openscad-creator-settings';
 
@@ -8,7 +8,17 @@ export function useSettings() {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
-        return { ...DEFAULT_SETTINGS, ...JSON.parse(stored) };
+        const parsed = JSON.parse(stored);
+        // Deep merge providers to ensure new properties are included
+        return {
+          ...DEFAULT_SETTINGS,
+          ...parsed,
+          providers: {
+            claude: { ...DEFAULT_SETTINGS.providers.claude, ...parsed.providers?.claude },
+            gemini: { ...DEFAULT_SETTINGS.providers.gemini, ...parsed.providers?.gemini },
+            openai: { ...DEFAULT_SETTINGS.providers.openai, ...parsed.providers?.openai },
+          },
+        };
       }
     } catch (e) {
       console.error('Failed to load settings:', e);
@@ -52,6 +62,26 @@ export function useSettings() {
     }));
   }, []);
 
+  const updateClaudeThinkingBudget = useCallback((thinkingBudget: number) => {
+    setSettings(prev => ({
+      ...prev,
+      providers: {
+        ...prev.providers,
+        claude: { ...prev.providers.claude, thinkingBudget },
+      },
+    }));
+  }, []);
+
+  const updateOpenAIReasoningEffort = useCallback((reasoningEffort: ReasoningEffort) => {
+    setSettings(prev => ({
+      ...prev,
+      providers: {
+        ...prev.providers,
+        openai: { ...prev.providers.openai, reasoningEffort },
+      },
+    }));
+  }, []);
+
   const toggleTheme = useCallback(() => {
     setSettings(prev => ({
       ...prev,
@@ -64,6 +94,8 @@ export function useSettings() {
     updateSettings,
     updateProviderKey,
     updateProviderModel,
+    updateClaudeThinkingBudget,
+    updateOpenAIReasoningEffort,
     toggleTheme,
   };
 }

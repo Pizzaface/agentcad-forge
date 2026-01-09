@@ -4,10 +4,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { Slider } from '@/components/ui/slider';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Settings, Eye, EyeOff, Moon, Sun, Loader2, RefreshCw } from 'lucide-react';
-import { AppSettings, AIProvider } from '@/types/openscad';
+import { Settings, Eye, EyeOff, Moon, Sun, Loader2, RefreshCw, Brain } from 'lucide-react';
+import { AppSettings, AIProvider, ReasoningEffort } from '@/types/openscad';
 import { 
   ModelInfo, 
   fetchClaudeModels, 
@@ -21,6 +22,8 @@ interface SettingsPanelProps {
   onUpdateSettings: (updates: Partial<AppSettings>) => void;
   onUpdateProviderKey: (provider: AIProvider, key: string) => void;
   onUpdateProviderModel: (provider: AIProvider, model: string) => void;
+  onUpdateClaudeThinkingBudget: (budget: number) => void;
+  onUpdateOpenAIReasoningEffort: (effort: ReasoningEffort) => void;
   onToggleTheme: () => void;
 }
 
@@ -29,6 +32,8 @@ export function SettingsPanel({
   onUpdateSettings,
   onUpdateProviderKey,
   onUpdateProviderModel,
+  onUpdateClaudeThinkingBudget,
+  onUpdateOpenAIReasoningEffort,
   onToggleTheme,
 }: SettingsPanelProps) {
   const [showKeys, setShowKeys] = useState<Record<AIProvider, boolean>>({
@@ -195,8 +200,58 @@ export function SettingsPanel({
 
           <TabsContent value="api-keys" className="space-y-4 pt-4">
             {renderProviderSection('claude', '🟠', 'Claude', 'sk-ant-...')}
+            
+            {/* Claude Extended Thinking */}
+            <div className="space-y-2 pl-6 border-l-2 border-orange-500/30">
+              <Label className="flex items-center gap-2 text-sm">
+                <Brain className="h-3 w-3" /> Extended Thinking Budget
+              </Label>
+              <div className="flex items-center gap-3">
+                <Slider
+                  value={[settings.providers.claude.thinkingBudget]}
+                  onValueChange={([v]) => onUpdateClaudeThinkingBudget(v)}
+                  min={0}
+                  max={32000}
+                  step={1024}
+                  className="flex-1"
+                />
+                <span className="text-xs font-mono w-16 text-right text-muted-foreground">
+                  {settings.providers.claude.thinkingBudget === 0 
+                    ? 'Off' 
+                    : `${(settings.providers.claude.thinkingBudget / 1000).toFixed(0)}k`}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Enable Claude's extended thinking (min 1024 tokens). Higher = deeper reasoning.
+              </p>
+            </div>
+
             {renderProviderSection('gemini', '🔵', 'Gemini', 'AIza...')}
             {renderProviderSection('openai', '🟢', 'OpenAI', 'sk-...')}
+            
+            {/* OpenAI Reasoning Effort */}
+            <div className="space-y-2 pl-6 border-l-2 border-green-500/30">
+              <Label className="flex items-center gap-2 text-sm">
+                <Brain className="h-3 w-3" /> Reasoning Effort
+              </Label>
+              <Select
+                value={settings.providers.openai.reasoningEffort}
+                onValueChange={(v) => onUpdateOpenAIReasoningEffort(v as ReasoningEffort)}
+              >
+                <SelectTrigger className="h-8">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="off">Off</SelectItem>
+                  <SelectItem value="low">Low (faster)</SelectItem>
+                  <SelectItem value="medium">Medium (balanced)</SelectItem>
+                  <SelectItem value="high">High (thorough)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Controls how much reasoning the model does before responding.
+              </p>
+            </div>
 
             <p className="text-xs text-muted-foreground">
               API keys are stored locally in your browser. Models are fetched from each provider's API.
