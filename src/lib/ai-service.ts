@@ -1,13 +1,25 @@
 import { AIProvider, AIAction, AppSettings } from '@/types/openscad';
 
 const SYSTEM_PROMPTS: Record<AIAction, string> = {
-  generate: `You are an expert OpenSCAD programmer. Generate clean, well-commented OpenSCAD code based on the user's description. Include helpful comments explaining the code structure. Use parametric design when appropriate.`,
-  
+  generate: `You are an expert OpenSCAD programmer. Generate clean, well-commented OpenSCAD code based on the user's description. Use parametric design when appropriate.
+
+Return ONLY the OpenSCAD code, wrapped in a single markdown code block like:
+\`\`\`openscad
+...code...
+\`\`\`
+No prose outside the code block.`,
+
   modify: `You are an expert OpenSCAD programmer. Modify the provided OpenSCAD code according to the user's instructions. Preserve the existing structure where possible. Return ONLY the modified code, no explanations.`,
-  
+
   explain: `You are an expert OpenSCAD programmer and teacher. Explain the provided OpenSCAD code in plain English. Break down what each section does, explain any mathematical concepts, and describe the resulting 3D shape.`,
-  
-  fix: `You are an expert OpenSCAD programmer and debugger. Analyze the provided OpenSCAD code for syntax errors, logical issues, or common mistakes. Fix any problems found and return the corrected code with comments explaining what was fixed.`,
+
+  fix: `You are an expert OpenSCAD programmer and debugger. Analyze the provided OpenSCAD code for syntax errors, logical issues, or common mistakes. Fix any problems found.
+
+Return ONLY the corrected OpenSCAD code, wrapped in a single markdown code block like:
+\`\`\`openscad
+...code...
+\`\`\`
+No prose outside the code block.`,
 };
 
 interface AIRequestConfig {
@@ -250,18 +262,23 @@ async function streamOpenAIRequest(
 }
 
 export function extractCodeFromResponse(response: string): string {
-  // Try to extract code from markdown code blocks
-  const codeBlockMatch = response.match(/```(?:openscad|scad)?\n([\s\S]*?)```/);
-  if (codeBlockMatch) {
+  // Try to extract code from markdown code blocks (handle CRLF and case-insensitive lang)
+  const codeBlockMatch = response.match(/```(?:openscad|scad)?\s*\r?\n([\s\S]*?)```/i);
+  if (codeBlockMatch?.[1]) {
     return codeBlockMatch[1].trim();
   }
-  
+
   // If no code block, check if the response looks like code
-  if (response.includes('cube(') || response.includes('cylinder(') || 
-      response.includes('sphere(') || response.includes('module ') ||
-      response.includes('difference(') || response.includes('union(')) {
-    return response.trim();
-  }
-  
-  return response;
+  const looksLikeCode =
+    response.includes('cube(') ||
+    response.includes('cylinder(') ||
+    response.includes('sphere(') ||
+    response.includes('module ') ||
+    response.includes('difference(') ||
+    response.includes('union(') ||
+    response.includes('translate(') ||
+    response.includes('rotate(') ||
+    response.includes('scale(');
+
+  return looksLikeCode ? response.trim() : '';
 }
