@@ -9,10 +9,10 @@ let initPromise: Promise<OpenSCAD> | null = null;
 // render/validate requests can run concurrently and stomp on the shared FS.
 let opQueue: Promise<void> = Promise.resolve();
 
-type MessageType = 
-  | { type: 'init' }
-  | { type: 'render'; code: string; id: string }
-  | { type: 'validate'; code: string; id: string };
+// Global stderr collector - cleared before each operation, collected during
+// Note: Emscripten callbacks are set at creation time and cannot be reassigned
+let currentStderr: string[] = [];
+let currentRequestId: string | null = null;
 
 async function initOpenSCAD(): Promise<OpenSCAD> {
   if (openscadRaw) return openscadRaw;
@@ -24,8 +24,9 @@ async function initOpenSCAD(): Promise<OpenSCAD> {
       self.postMessage({ type: 'log', text });
     },
     printErr: (text: string) => {
-      // Don't treat stderr as fatal - OpenSCAD prints status info there
-      self.postMessage({ type: 'stderr', text });
+      // Collect stderr for current operation
+      currentStderr.push(text);
+      self.postMessage({ type: 'stderr', text, id: currentRequestId });
     },
   }).then((instance) => {
     openscadRaw = instance.getInstance();
@@ -36,134 +37,132 @@ async function initOpenSCAD(): Promise<OpenSCAD> {
   return initPromise;
 }
 
+type MessageType = 
+  | { type: 'init' }
+  | { type: 'render'; code: string; id: string }
+  | { type: 'validate'; code: string; id: string };
+
 async function renderScadToSTL(code: string, id: string) {
-  const stderrLogs: string[] = [];
+  // Reset stderr collector for this request
+  currentStderr = [];
+  currentRequestId = id;
   
   try {
     const instance = await initOpenSCAD();
+
+    // Cleanup old files
+    try { instance.FS.unlink("/input.scad"); } catch {}
+    try { instance.FS.unlink("/output.stl"); } catch {}
     
-    // Capture stderr for this render
-    const originalPrintErr = instance.printErr;
-    instance.printErr = (text: string) => {
-      stderrLogs.push(text);
-      self.postMessage({ type: 'stderr', text });
-    };
-
+    instance.FS.writeFile("/input.scad", code);
+    
+    // Run OpenSCAD - capture any thrown errors but don't fail yet
     try {
-      // Cleanup old files
-      try { instance.FS.unlink("/input.scad"); } catch {}
-      try { instance.FS.unlink("/output.stl"); } catch {}
+      instance.callMain(["/input.scad", "--enable=manifold", "-o", "/output.stl"]);
+    } catch (mainError: any) {
+      console.warn('[Worker] callMain threw:', mainError, typeof mainError);
       
-      instance.FS.writeFile("/input.scad", code);
+      // Emscripten ExitStatus is often just a number or has .status
+      const isExitStatus = mainError?.name === 'ExitStatus' || 
+                           mainError?.constructor?.name === 'ExitStatus' ||
+                           typeof mainError === 'number';
       
-      // Run OpenSCAD - capture any thrown errors but don't fail yet
-      let thrownError: any = null;
-      try {
-        instance.callMain(["/input.scad", "--enable=manifold", "-o", "/output.stl"]);
-      } catch (mainError: any) {
-        console.warn('[Worker] callMain threw:', mainError, typeof mainError);
-        thrownError = mainError;
-        
-        // Emscripten ExitStatus is often just a number or has .status
-        const isExitStatus = mainError?.name === 'ExitStatus' || 
-                             mainError?.constructor?.name === 'ExitStatus' ||
-                             typeof mainError === 'number';
-        
-        if (isExitStatus) {
-          const status = typeof mainError === 'number' ? mainError : mainError?.status;
-          console.warn('[Worker] ExitStatus:', status);
-          // Don't fail yet - check if output file exists
-        } else if (mainError?.message?.includes('memory') || 
-                   mainError?.message?.includes('bad_alloc') ||
-                   mainError?.message?.includes('abort')) {
-          self.postMessage({ type: 'abort', reason: String(mainError?.message || mainError) });
-        }
+      if (isExitStatus) {
+        const status = typeof mainError === 'number' ? mainError : mainError?.status;
+        console.warn('[Worker] ExitStatus:', status);
+        // Don't fail yet - check if output file exists
+      } else if (mainError?.message?.includes('memory') || 
+                 mainError?.message?.includes('bad_alloc') ||
+                 mainError?.message?.includes('abort')) {
+        self.postMessage({ type: 'abort', reason: String(mainError?.message || mainError) });
       }
-
-      // SUCCESS IS DETERMINED BY OUTPUT FILE EXISTENCE, NOT EXIT CODE
-      let stlBytes: Uint8Array;
-      try {
-        stlBytes = instance.FS.readFile("/output.stl") as Uint8Array;
-      } catch (readErr) {
-        // No output file - this is a real failure
-        // Format a meaningful error message from stderr or the exception
-        let errorMsg = 'No output generated';
-        if (stderrLogs.length > 0) {
-          // Filter out informational lines, keep actual errors
-          const errorLines = stderrLogs.filter(line => 
-            line.includes('ERROR') || 
-            line.includes('error') || 
-            line.includes('Warning:') ||
-            line.includes('syntax error')
-          );
-          errorMsg = errorLines.length > 0 ? errorLines.join('\n') : stderrLogs.slice(-5).join('\n');
-        }
-        throw new Error(errorMsg);
-      }
-
-      // Check file has content
-      if (!stlBytes || stlBytes.byteLength === 0) {
-        throw new Error('Output file exists but is empty');
-      }
-
-      // Parse STL
-      const buffer = stlBytes.buffer.slice(stlBytes.byteOffset, stlBytes.byteOffset + stlBytes.byteLength);
-      const mesh = parseSTL(buffer as ArrayBuffer);
-
-      if (!mesh.vertices || mesh.vertices.length === 0) {
-        throw new Error('Generated STL has no geometry');
-      }
-
-      // SUCCESS - even if there were warnings in stderr
-      self.postMessage({ 
-        type: 'render-result', 
-        id, 
-        mesh, 
-        logs: stderrLogs,
-        byteLength: stlBytes.byteLength 
-      });
-      
-    } finally {
-      if (originalPrintErr) instance.printErr = originalPrintErr;
-      try { instance.FS.unlink("/input.scad"); } catch {}
-      try { instance.FS.unlink("/output.stl"); } catch {}
     }
+
+    // SUCCESS IS DETERMINED BY OUTPUT FILE EXISTENCE, NOT EXIT CODE
+    let stlBytes: Uint8Array;
+    try {
+      stlBytes = instance.FS.readFile("/output.stl") as Uint8Array;
+    } catch (readErr) {
+      // No output file - this is a real failure
+      // Format a meaningful error message from stderr or the exception
+      let errorMsg = 'No output generated';
+      if (currentStderr.length > 0) {
+        // Filter out informational lines, keep actual errors
+        const errorLines = currentStderr.filter(line => 
+          line.includes('ERROR') || 
+          line.includes('error') || 
+          line.includes('Warning:') ||
+          line.includes('syntax error')
+        );
+        errorMsg = errorLines.length > 0 ? errorLines.join('\n') : currentStderr.slice(-5).join('\n');
+      }
+      throw new Error(errorMsg);
+    }
+
+    // Check file has content
+    if (!stlBytes || stlBytes.byteLength === 0) {
+      throw new Error('Output file exists but is empty');
+    }
+
+    // Parse STL
+    const buffer = stlBytes.buffer.slice(stlBytes.byteOffset, stlBytes.byteOffset + stlBytes.byteLength);
+    const mesh = parseSTL(buffer as ArrayBuffer);
+
+    if (!mesh.vertices || mesh.vertices.length === 0) {
+      throw new Error('Generated STL has no geometry');
+    }
+
+    // SUCCESS - even if there were warnings in stderr
+    self.postMessage({ 
+      type: 'render-result', 
+      id, 
+      mesh, 
+      logs: currentStderr,
+      byteLength: stlBytes.byteLength 
+    });
+    
+    // Cleanup
+    try { instance.FS.unlink("/input.scad"); } catch {}
+    try { instance.FS.unlink("/output.stl"); } catch {}
+      
   } catch (error: any) {
     console.error('[Worker] Render error:', error);
     self.postMessage({ 
       type: 'render-error', 
       id, 
       error: error?.message || String(error),
-      logs: stderrLogs 
+      logs: currentStderr 
     });
+  } finally {
+    currentRequestId = null;
   }
 }
 
 async function validateCode(code: string, id: string) {
-  const errors: string[] = [];
+  // Reset stderr collector for this request
+  currentStderr = [];
+  currentRequestId = id;
   
   try {
     const instance = await initOpenSCAD();
-    
-    const originalPrintErr = instance.printErr;
-    instance.printErr = (text: string) => {
-      errors.push(text);
-    };
 
+    try { instance.FS.unlink("/validate.scad"); } catch {}
     instance.FS.writeFile("/validate.scad", code);
     
     let valid = true;
     try {
       instance.callMain(["/validate.scad", "--preview", "-o", "/dev/null"]);
     } catch (mainError: any) {
-      if (mainError?.name === 'ExitStatus' || mainError?.constructor?.name === 'ExitStatus') {
-        valid = mainError.status === 0;
+      const isExitStatus = mainError?.name === 'ExitStatus' || 
+                           mainError?.constructor?.name === 'ExitStatus' ||
+                           typeof mainError === 'number';
+      if (isExitStatus) {
+        const status = typeof mainError === 'number' ? mainError : mainError?.status;
+        valid = status === 0;
       } else {
         valid = false;
-        errors.push(mainError?.message || String(mainError));
+        currentStderr.push(mainError?.message || String(mainError));
       }
-    } finally {
-      if (originalPrintErr) instance.printErr = originalPrintErr;
     }
 
     try { instance.FS.unlink("/validate.scad"); } catch {}
@@ -171,8 +170,8 @@ async function validateCode(code: string, id: string) {
     self.postMessage({
       type: 'validate-result',
       id,
-      valid: valid && errors.length === 0,
-      errors
+      valid: valid && currentStderr.filter(l => l.includes('ERROR') || l.includes('error')).length === 0,
+      errors: currentStderr
     });
   } catch (error) {
     self.postMessage({
@@ -181,6 +180,8 @@ async function validateCode(code: string, id: string) {
       valid: false,
       errors: [error instanceof Error ? error.message : 'Validation failed']
     });
+  } finally {
+    currentRequestId = null;
   }
 }
 
