@@ -8,7 +8,7 @@ import { Slider } from '@/components/ui/slider';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Settings, Eye, EyeOff, Moon, Sun, Loader2, RefreshCw, Brain } from 'lucide-react';
-import { AppSettings, AIProvider, ReasoningEffort } from '@/types/openscad';
+import { AppSettings, AIProvider, ReasoningEffort, OpenAIAPIType } from '@/types/openscad';
 import { 
   ModelInfo, 
   fetchClaudeModels, 
@@ -24,6 +24,7 @@ interface SettingsPanelProps {
   onUpdateProviderModel: (provider: AIProvider, model: string) => void;
   onUpdateClaudeThinkingBudget: (budget: number) => void;
   onUpdateOpenAIReasoningEffort: (effort: ReasoningEffort) => void;
+  onUpdateOpenAIAPIType: (apiType: OpenAIAPIType) => void;
   onToggleTheme: () => void;
 }
 
@@ -34,6 +35,7 @@ export function SettingsPanel({
   onUpdateProviderModel,
   onUpdateClaudeThinkingBudget,
   onUpdateOpenAIReasoningEffort,
+  onUpdateOpenAIAPIType,
   onToggleTheme,
 }: SettingsPanelProps) {
   const [showKeys, setShowKeys] = useState<Record<AIProvider, boolean>>({
@@ -229,6 +231,28 @@ export function SettingsPanel({
             {renderProviderSection('gemini', '🔵', 'Gemini', 'AIza...')}
             {renderProviderSection('openai', '🟢', 'OpenAI', 'sk-...')}
             
+            {/* OpenAI API Type */}
+            <div className="space-y-2 pl-6 border-l-2 border-green-500/30">
+              <Label className="flex items-center gap-2 text-sm">
+                API Type
+              </Label>
+              <Select
+                value={settings.providers.openai.apiType || 'completions'}
+                onValueChange={(v) => onUpdateOpenAIAPIType(v as OpenAIAPIType)}
+              >
+                <SelectTrigger className="h-8">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="completions">Chat Completions</SelectItem>
+                  <SelectItem value="responses">Responses API</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Completions: Traditional chat API. Responses: Newer API with built-in tools support.
+              </p>
+            </div>
+
             {/* OpenAI Reasoning Effort */}
             <div className="space-y-2 pl-6 border-l-2 border-green-500/30">
               <Label className="flex items-center gap-2 text-sm">

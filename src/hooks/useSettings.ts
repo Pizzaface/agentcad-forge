@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { AppSettings, DEFAULT_SETTINGS, AIProvider, ReasoningEffort } from '@/types/openscad';
+import { AppSettings, DEFAULT_SETTINGS, AIProvider, ReasoningEffort, OpenAIAPIType } from '@/types/openscad';
 
 const STORAGE_KEY = 'openscad-creator-settings';
 
@@ -82,6 +82,16 @@ export function useSettings() {
     }));
   }, []);
 
+  const updateOpenAIAPIType = useCallback((apiType: OpenAIAPIType) => {
+    setSettings(prev => ({
+      ...prev,
+      providers: {
+        ...prev.providers,
+        openai: { ...prev.providers.openai, apiType },
+      },
+    }));
+  }, []);
+
   const toggleTheme = useCallback(() => {
     setSettings(prev => ({
       ...prev,
@@ -96,6 +106,7 @@ export function useSettings() {
     updateProviderModel,
     updateClaudeThinkingBudget,
     updateOpenAIReasoningEffort,
+    updateOpenAIAPIType,
     toggleTheme,
   };
 }
