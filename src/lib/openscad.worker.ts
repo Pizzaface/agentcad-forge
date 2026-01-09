@@ -28,7 +28,9 @@ async function initOpenSCAD(): Promise<OpenSCAD> {
       currentStderr.push(text);
       self.postMessage({ type: 'stderr', text, id: currentRequestId });
     },
-  }).then((instance) => {
+    // Keep runtime alive for multiple callMain invocations
+    noExitRuntime: true,
+  } as Parameters<typeof createOpenSCAD>[0]).then((instance) => {
     openscadRaw = instance.getInstance();
     self.postMessage({ type: 'ready' });
     return openscadRaw;
