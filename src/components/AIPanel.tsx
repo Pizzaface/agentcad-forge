@@ -4,7 +4,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Sparkles, Pencil, BookOpen, Wrench, Send, Loader2 } from 'lucide-react';
+import { Sparkles, Pencil, BookOpen, Wrench, Send, Loader2, Brain } from 'lucide-react';
 import { AIProvider, AIAction, AIMessage, AppSettings, AI_ACTIONS } from '@/types/openscad';
 import { sendAIRequest, extractCodeFromResponse } from '@/lib/ai-service';
 import { cn } from '@/lib/utils';
@@ -47,6 +47,21 @@ export function AIPanel({ settings, code, selectedText, compileError, onCodeUpda
   const [response, setResponse] = useState<string>('');
 
   const hasApiKey = settings.providers[selectedProvider].apiKey.length > 0;
+
+  // Check if reasoning/thinking is active for current provider
+  const isReasoningActive = 
+    (selectedProvider === 'claude' && settings.providers.claude.thinkingBudget >= 1024) ||
+    (selectedProvider === 'openai' && settings.providers.openai.reasoningEffort !== 'off');
+
+  const getReasoningLabel = () => {
+    if (selectedProvider === 'claude' && settings.providers.claude.thinkingBudget >= 1024) {
+      return `Thinking ${(settings.providers.claude.thinkingBudget / 1000).toFixed(0)}k`;
+    }
+    if (selectedProvider === 'openai' && settings.providers.openai.reasoningEffort !== 'off') {
+      return `Reasoning ${settings.providers.openai.reasoningEffort}`;
+    }
+    return '';
+  };
 
   // Build the effective prompt, including compile error for 'fix' action
   const buildPrompt = useCallback((userPrompt: string, validationErrors?: string[]): string => {
@@ -144,7 +159,15 @@ export function AIPanel({ settings, code, selectedText, compileError, onCodeUpda
       {/* Header */}
       <div className="border-b border-border bg-panel-header p-3">
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-semibold">AI Assistant</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold">AI Assistant</h3>
+            {isReasoningActive && (
+              <Badge variant="secondary" className="gap-1 text-xs bg-primary/10 text-primary border-primary/20">
+                <Brain className="h-3 w-3" />
+                {getReasoningLabel()}
+              </Badge>
+            )}
+          </div>
           <Select value={selectedProvider} onValueChange={(v) => setSelectedProvider(v as AIProvider)}>
             <SelectTrigger className="w-32 h-8 text-xs">
               <SelectValue />
