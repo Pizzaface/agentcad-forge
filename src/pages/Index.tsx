@@ -61,7 +61,7 @@ export default function Index() {
   }, [showAIPanel]);
   
   // Full OpenSCAD WASM rendering with 1.5s debounce
-  const { mesh: renderedMesh, isRendering, isLoading, error, lintErrors, logs, render, validate } = useOpenScad(true, 1500);
+  const { mesh: renderedMesh, isRendering, isLoading, error, lintErrors, logs, render, forceRender, validate } = useOpenScad(true, 1500);
 
   // Format errors for AI context
   const formattedErrors = error 
@@ -136,7 +136,7 @@ export default function Index() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => render(code)}
+                  onClick={() => forceRender(code)}
                   disabled={isRendering || isLoading}
                   className="h-6 gap-1 px-2 text-xs"
                 >
