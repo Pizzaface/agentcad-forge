@@ -9,6 +9,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { AIProvider, AIAction, AIMessage, AppSettings, AI_ACTIONS } from '@/types/openscad';
 import { sendAIRequest, extractCodeFromResponse } from '@/lib/ai-service';
 import { cn } from '@/lib/utils';
+import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 
 interface AIPanelProps {
   settings: AppSettings;
@@ -289,9 +290,15 @@ export function AIPanel({ settings, code, selectedText, compileError, messages, 
                       </Badge>
                     )}
                   </div>
-                  <pre className="whitespace-pre-wrap text-xs max-h-40 overflow-y-auto">
-                    {msg.content}
-                  </pre>
+                  {msg.role === 'user' ? (
+                    <pre className="whitespace-pre-wrap text-xs max-h-40 overflow-y-auto">
+                      {msg.content}
+                    </pre>
+                  ) : (
+                    <div className="text-xs max-h-40 overflow-y-auto">
+                      <MarkdownRenderer content={msg.content} />
+                    </div>
+                  )}
                 </div>
               ))}
 
@@ -308,9 +315,9 @@ export function AIPanel({ settings, code, selectedText, compileError, messages, 
                       </Button>
                     )}
                   </div>
-                  <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap text-xs">
-                    {response}
-                  </pre>
+                  <div className="max-h-64 overflow-y-auto text-xs">
+                    <MarkdownRenderer content={response} />
+                  </div>
                 </div>
               )}
             </div>
