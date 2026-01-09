@@ -28,9 +28,7 @@ async function initOpenSCAD(): Promise<OpenSCAD> {
       currentStderr.push(text);
       self.postMessage({ type: 'stderr', text, id: currentRequestId });
     },
-    // Keep runtime alive for multiple callMain invocations
-    noExitRuntime: true,
-  } as Parameters<typeof createOpenSCAD>[0]).then((instance) => {
+  }).then((instance) => {
     openscadRaw = instance.getInstance();
     self.postMessage({ type: 'ready' });
     return openscadRaw;
@@ -58,9 +56,9 @@ async function renderScadToSTL(code: string, id: string) {
     
     instance.FS.writeFile("/input.scad", code);
     
-    // Run OpenSCAD - capture any thrown errors but don't fail yet
+    // Run OpenSCAD
     try {
-      instance.callMain(["/input.scad", "--enable=manifold", "-o", "/output.stl"]);
+      instance.callMain(["/input.scad", "-o", "/output.stl"]);
     } catch (mainError: any) {
       console.warn('[Worker] callMain threw:', mainError, typeof mainError);
       
@@ -153,7 +151,7 @@ async function validateCode(code: string, id: string) {
     
     let valid = true;
     try {
-      instance.callMain(["/validate.scad", "--preview", "-o", "/dev/null"]);
+      instance.callMain(["/validate.scad", "--preview", "-o", "/validate-output.stl"]);
     } catch (mainError: any) {
       const isExitStatus = mainError?.name === 'ExitStatus' || 
                            mainError?.constructor?.name === 'ExitStatus' ||
@@ -168,6 +166,7 @@ async function validateCode(code: string, id: string) {
     }
 
     try { instance.FS.unlink("/validate.scad"); } catch {}
+    try { instance.FS.unlink("/validate-output.stl"); } catch {}
 
     self.postMessage({
       type: 'validate-result',
