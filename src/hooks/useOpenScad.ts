@@ -128,15 +128,15 @@ export function useOpenScad(autoRender: boolean = true, debounceMs: number = 100
       clearTimeout(timeoutRef.current);
     }
 
-    // Skip if code hasn't changed
-    if (code === lastCodeRef.current) {
-      return;
-    }
-    lastCodeRef.current = code;
-
     setIsRendering(true);
     
     timeoutRef.current = setTimeout(() => {
+      // Skip if code hasn't changed since last actual render
+      if (code === lastCodeRef.current) {
+        setIsRendering(false);
+        return;
+      }
+      lastCodeRef.current = code;
       render(code);
     }, debounceMs);
   }, [render, debounceMs]);
