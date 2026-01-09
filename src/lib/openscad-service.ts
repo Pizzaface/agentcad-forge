@@ -33,13 +33,15 @@ function getWorker(): Worker {
         case 'log':
           console.log('[OpenSCAD]', e.data.text);
           break;
-        case 'stderr':
+        case 'stderr': {
           console.warn('[OpenSCAD stderr]', e.data.text);
-          // Add to pending request logs - these are warnings, not errors
-          for (const req of pendingRequests.values()) {
-            req.logs.push(e.data.text);
+          const id = (e.data?.id ?? null) as string | null;
+          if (id) {
+            const req = pendingRequests.get(id);
+            if (req) req.logs.push(e.data.text);
           }
           break;
+        }
         case 'abort':
           console.error('[OpenSCAD abort]', e.data.reason);
           break;

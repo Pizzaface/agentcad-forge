@@ -42,7 +42,7 @@ type MessageType =
   | { type: 'render'; code: string; id: string }
   | { type: 'validate'; code: string; id: string };
 
-async function renderScadToSTL(code: string, id: string) {
+async function renderScadToSTL(code: string, id: string, retry = false) {
   // Reset stderr collector for this request
   currentStderr = [];
   currentRequestId = id;
@@ -83,14 +83,22 @@ async function renderScadToSTL(code: string, id: string) {
     try {
       stlBytes = instance.FS.readFile("/output.stl") as Uint8Array;
     } catch (readErr) {
-      // No output file - this is a real failure
+      // No output file - this can happen if the WASM runtime got into a bad state.
+      // Retry once by recreating the OpenSCAD instance (equivalent to a page reload).
+      if (!retry) {
+        console.warn('[Worker] No output; reinitializing OpenSCAD WASM and retrying once');
+        openscadRaw = null;
+        initPromise = null;
+        return renderScadToSTL(code, id, true);
+      }
+
       // Format a meaningful error message from stderr or the exception
       let errorMsg = 'No output generated';
       if (currentStderr.length > 0) {
         // Filter out informational lines, keep actual errors
-        const errorLines = currentStderr.filter(line => 
-          line.includes('ERROR') || 
-          line.includes('error') || 
+        const errorLines = currentStderr.filter(line =>
+          line.includes('ERROR') ||
+          line.includes('error') ||
           line.includes('Warning:') ||
           line.includes('syntax error')
         );
@@ -151,7 +159,7 @@ async function validateCode(code: string, id: string) {
     
     let valid = true;
     try {
-      instance.callMain(["/validate.scad", "--preview", "-o", "/validate-output.stl"]);
+      instance.callMain(["/validate.scad", "-o", "/validate-output.stl"]);
     } catch (mainError: any) {
       const isExitStatus = mainError?.name === 'ExitStatus' || 
                            mainError?.constructor?.name === 'ExitStatus' ||
