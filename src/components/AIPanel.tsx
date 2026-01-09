@@ -134,7 +134,9 @@ export function AIPanel({ settings, code, selectedText, compileError, onCodeUpda
 
   const handleApplyCode = useCallback(() => {
     const extractedCode = extractCodeFromResponse(response);
-    onCodeUpdate(extractedCode);
+    if (extractedCode.trim()) {
+      onCodeUpdate(extractedCode);
+    }
   }, [response, onCodeUpdate]);
 
   return (
