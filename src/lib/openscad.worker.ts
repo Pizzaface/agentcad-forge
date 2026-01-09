@@ -5,6 +5,10 @@ import { parseSTL } from './stl-parser';
 let openscadRaw: OpenSCAD | null = null;
 let initPromise: Promise<OpenSCAD> | null = null;
 
+// Web Workers don't await async event handlers; without an explicit queue, multiple
+// render/validate requests can run concurrently and stomp on the shared FS.
+let opQueue: Promise<void> = Promise.resolve();
+
 type MessageType = 
   | { type: 'init' }
   | { type: 'render'; code: string; id: string }
@@ -180,22 +184,39 @@ async function validateCode(code: string, id: string) {
   }
 }
 
-self.onmessage = async (e: MessageEvent<MessageType>) => {
-  const { type } = e.data;
-  
-  switch (type) {
-    case 'init':
-      try {
-        await initOpenSCAD();
-      } catch (error) {
-        self.postMessage({ type: 'init-error', error: String(error) });
-      }
+self.onmessage = (e: MessageEvent<MessageType>) => {
+  const data = e.data;
+
+  switch (data.type) {
+    case 'init': {
+      opQueue = opQueue
+        .then(async () => {
+          try {
+            await initOpenSCAD();
+          } catch (error) {
+            self.postMessage({ type: 'init-error', error: String(error) });
+          }
+        })
+        .catch(() => {
+          // Keep queue alive even if something unexpected happens
+        });
       break;
-    case 'render':
-      await renderScadToSTL(e.data.code, e.data.id);
+    }
+    case 'render': {
+      opQueue = opQueue
+        .then(() => renderScadToSTL(data.code, data.id))
+        .catch((err) => {
+          console.error('[Worker] Queued render failed:', err);
+        });
       break;
-    case 'validate':
-      await validateCode(e.data.code, e.data.id);
+    }
+    case 'validate': {
+      opQueue = opQueue
+        .then(() => validateCode(data.code, data.id))
+        .catch((err) => {
+          console.error('[Worker] Queued validate failed:', err);
+        });
       break;
+    }
   }
 };
