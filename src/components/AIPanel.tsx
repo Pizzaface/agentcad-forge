@@ -128,7 +128,8 @@ export function AIPanel({ settings, code, selectedText, compileError, onCodeUpda
         settings,
         onChunk: (chunk) => {
           fullResponse += chunk;
-          setResponse(fullResponse);
+          // Use functional update to ensure React processes each chunk
+          setResponse(() => fullResponse);
         },
       });
 
