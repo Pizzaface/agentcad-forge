@@ -58,7 +58,7 @@ export function AIPanel({ settings, code, selectedText, compileError, onCodeUpda
       return `Thinking ${(settings.providers.claude.thinkingBudget / 1000).toFixed(0)}k`;
     }
     if (selectedProvider === 'openai' && settings.providers.openai.reasoningEffort !== 'off') {
-      const apiType = settings.providers.openai.apiType === 'responses' ? 'Responses' : 'Completions';
+      const apiType = (settings.providers.openai.apiType ?? 'completions') === 'responses' ? 'Responses' : 'Completions';
       return `${apiType} • Reasoning ${settings.providers.openai.reasoningEffort}`;
     }
     return '';
@@ -66,7 +66,8 @@ export function AIPanel({ settings, code, selectedText, compileError, onCodeUpda
 
   const getAPITypeLabel = () => {
     if (selectedProvider === 'openai') {
-      return settings.providers.openai.apiType === 'responses' ? 'Responses API' : 'Completions API';
+      const apiType = settings.providers.openai.apiType ?? 'completions';
+      return apiType === 'responses' ? 'Responses API' : 'Completions API';
     }
     return null;
   };
