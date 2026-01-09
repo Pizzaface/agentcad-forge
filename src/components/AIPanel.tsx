@@ -4,7 +4,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Sparkles, Pencil, BookOpen, Wrench, Send, Loader2, Brain } from 'lucide-react';
+import { Sparkles, Pencil, BookOpen, Wrench, Send, Loader2, Brain, Trash2 } from 'lucide-react';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { AIProvider, AIAction, AIMessage, AppSettings, AI_ACTIONS } from '@/types/openscad';
 import { sendAIRequest, extractCodeFromResponse } from '@/lib/ai-service';
 import { cn } from '@/lib/utils';
@@ -14,8 +15,10 @@ interface AIPanelProps {
   code: string;
   selectedText: string;
   compileError: string | null;
+  messages: AIMessage[];
   onCodeUpdate: (code: string) => void;
   onAddMessage: (message: AIMessage) => void;
+  onClearMessages: () => void;
   onValidate: (code: string) => Promise<{ valid: boolean; errors: string[] }>;
 }
 
@@ -38,7 +41,7 @@ const ACTION_ICONS: Record<AIAction, React.ReactNode> = {
   fix: <Wrench className="h-4 w-4" />,
 };
 
-export function AIPanel({ settings, code, selectedText, compileError, onCodeUpdate, onAddMessage, onValidate }: AIPanelProps) {
+export function AIPanel({ settings, code, selectedText, compileError, messages, onCodeUpdate, onAddMessage, onClearMessages, onValidate }: AIPanelProps) {
   const [selectedProvider, setSelectedProvider] = useState<AIProvider>(settings.defaultProvider);
   const [selectedAction, setSelectedAction] = useState<AIAction>('generate');
   const [prompt, setPrompt] = useState('');
@@ -182,6 +185,17 @@ export function AIPanel({ settings, code, selectedText, compileError, onCodeUpda
                 {getReasoningLabel()}
               </Badge>
             )}
+            {messages.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onClearMessages}
+                className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                title="Clear conversation"
+              >
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            )}
           </div>
           <Select value={selectedProvider} onValueChange={(v) => setSelectedProvider(v as AIProvider)}>
             <SelectTrigger className="w-32 h-8 text-xs">
@@ -221,61 +235,88 @@ export function AIPanel({ settings, code, selectedText, compileError, onCodeUpda
       </div>
 
       {/* Content area */}
-      <div className="flex-1 overflow-y-auto p-3">
-        {!hasApiKey ? (
-          <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-center">
-            <p className="text-sm text-destructive">
-              No API key set for {PROVIDER_NAMES[selectedProvider]}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Add your API key in settings to use this provider
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {/* Compile error indicator */}
-            {compileError && selectedAction === 'fix' && (
-              <div className="rounded border border-destructive/50 bg-destructive/10 p-2">
-                <p className="mb-1 text-xs font-medium text-destructive">Compile error:</p>
-                <pre className="max-h-20 overflow-y-auto text-xs text-destructive/80">
-                  {compileError.slice(0, 300)}{compileError.length > 300 ? '...' : ''}
-                </pre>
-              </div>
-            )}
-
-            {/* Context indicator */}
-            {selectedText && (
-              <div className="rounded border border-border bg-muted/50 p-2">
-                <p className="mb-1 text-xs font-medium text-muted-foreground">Selected code:</p>
-                <pre className="max-h-20 overflow-y-auto text-xs">
-                  {selectedText.slice(0, 200)}{selectedText.length > 200 ? '...' : ''}
-                </pre>
-              </div>
-            )}
-
-            {/* Response area */}
-            {response && (
-              <div className="rounded-lg border border-border bg-card p-3">
-                <div className="mb-2 flex items-center justify-between">
-                  <Badge variant="secondary" className="text-xs">
-                    {PROVIDER_ICONS[selectedProvider]} {PROVIDER_NAMES[selectedProvider]}
-                  </Badge>
-                  {(selectedAction === 'generate' || selectedAction === 'modify' || selectedAction === 'fix') && (
-                    <Button size="sm" variant="outline" onClick={handleApplyCode} className="h-6 text-xs">
-                      Apply to Editor
-                    </Button>
-                  )}
+      <ScrollArea className="flex-1">
+        <div className="p-3">
+          {!hasApiKey ? (
+            <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-center">
+              <p className="text-sm text-destructive">
+                No API key set for {PROVIDER_NAMES[selectedProvider]}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Add your API key in settings to use this provider
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {/* Compile error indicator */}
+              {compileError && selectedAction === 'fix' && (
+                <div className="rounded border border-destructive/50 bg-destructive/10 p-2">
+                  <p className="mb-1 text-xs font-medium text-destructive">Compile error:</p>
+                  <pre className="max-h-20 overflow-y-auto text-xs text-destructive/80">
+                    {compileError.slice(0, 300)}{compileError.length > 300 ? '...' : ''}
+                  </pre>
                 </div>
-                <div className="prose prose-sm max-w-none dark:prose-invert">
-                  <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap rounded bg-muted p-2 text-xs">
+              )}
+
+              {/* Context indicator */}
+              {selectedText && (
+                <div className="rounded border border-border bg-muted/50 p-2">
+                  <p className="mb-1 text-xs font-medium text-muted-foreground">Selected code:</p>
+                  <pre className="max-h-20 overflow-y-auto text-xs">
+                    {selectedText.slice(0, 200)}{selectedText.length > 200 ? '...' : ''}
+                  </pre>
+                </div>
+              )}
+
+              {/* Conversation history */}
+              {messages.map((msg, idx) => (
+                <div
+                  key={idx}
+                  className={cn(
+                    "rounded-lg border p-3",
+                    msg.role === 'user'
+                      ? "border-primary/30 bg-primary/5 ml-4"
+                      : "border-border bg-card mr-4"
+                  )}
+                >
+                  <div className="mb-1 flex items-center gap-2">
+                    <Badge variant={msg.role === 'user' ? 'default' : 'secondary'} className="text-xs">
+                      {msg.role === 'user' ? 'You' : `${PROVIDER_ICONS[msg.provider]} ${PROVIDER_NAMES[msg.provider]}`}
+                    </Badge>
+                    {msg.action && (
+                      <Badge variant="outline" className="text-xs">
+                        {msg.action}
+                      </Badge>
+                    )}
+                  </div>
+                  <pre className="whitespace-pre-wrap text-xs max-h-40 overflow-y-auto">
+                    {msg.content}
+                  </pre>
+                </div>
+              ))}
+
+              {/* Current streaming response */}
+              {response && !messages.find(m => m.content === response) && (
+                <div className="rounded-lg border border-border bg-card p-3 mr-4">
+                  <div className="mb-2 flex items-center justify-between">
+                    <Badge variant="secondary" className="text-xs">
+                      {PROVIDER_ICONS[selectedProvider]} {PROVIDER_NAMES[selectedProvider]}
+                    </Badge>
+                    {(selectedAction === 'generate' || selectedAction === 'modify' || selectedAction === 'fix') && (
+                      <Button size="sm" variant="outline" onClick={handleApplyCode} className="h-6 text-xs">
+                        Apply to Editor
+                      </Button>
+                    )}
+                  </div>
+                  <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap text-xs">
                     {response}
                   </pre>
                 </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+              )}
+            </div>
+          )}
+        </div>
+      </ScrollArea>
 
       {/* Input area */}
       <div className="border-t border-border p-3">

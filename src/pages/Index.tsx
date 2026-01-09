@@ -15,6 +15,7 @@ import { OPENSCAD_TEMPLATE, AIMessage, STLMesh } from '@/types/openscad';
 
 const CODE_STORAGE_KEY = 'openscad-creator-code';
 const UI_STORAGE_KEY = 'openscad-creator-ui';
+const MESSAGES_STORAGE_KEY = 'openscad-creator-messages';
 
 function loadStoredCode(): string {
   try {
@@ -34,12 +35,21 @@ function loadStoredUI(): { showAIPanel: boolean } {
   }
 }
 
+function loadStoredMessages(): AIMessage[] {
+  try {
+    const stored = localStorage.getItem(MESSAGES_STORAGE_KEY);
+    return stored ? JSON.parse(stored) : [];
+  } catch {
+    return [];
+  }
+}
+
 export default function Index() {
   const { settings, updateSettings, updateProviderKey, updateProviderModel, updateClaudeThinkingBudget, updateOpenAIReasoningEffort, updateOpenAIAPIType, toggleTheme } = useSettings();
   const [code, setCode] = useState(loadStoredCode);
   const [selectedText, setSelectedText] = useState('');
   const [uploadedMesh, setUploadedMesh] = useState<STLMesh | null>(null);
-  const [messages, setMessages] = useState<AIMessage[]>([]);
+  const [messages, setMessages] = useState<AIMessage[]>(loadStoredMessages);
   const [showAIPanel, setShowAIPanel] = useState(() => loadStoredUI().showAIPanel);
   
   // Save code to localStorage
@@ -76,7 +86,24 @@ export default function Index() {
   }, [code, render]);
 
   const handleAddMessage = useCallback((message: AIMessage) => {
-    setMessages(prev => [...prev, message]);
+    setMessages(prev => {
+      const updated = [...prev, message];
+      try {
+        localStorage.setItem(MESSAGES_STORAGE_KEY, JSON.stringify(updated));
+      } catch (e) {
+        console.warn('Failed to save messages:', e);
+      }
+      return updated;
+    });
+  }, []);
+
+  const handleClearMessages = useCallback(() => {
+    setMessages([]);
+    try {
+      localStorage.removeItem(MESSAGES_STORAGE_KEY);
+    } catch (e) {
+      console.warn('Failed to clear messages:', e);
+    }
   }, []);
 
   const handleMeshLoaded = useCallback((mesh: STLMesh) => {
@@ -210,8 +237,10 @@ export default function Index() {
                       code={code}
                       selectedText={selectedText}
                       compileError={formattedErrors}
+                      messages={messages}
                       onCodeUpdate={setCode}
                       onAddMessage={handleAddMessage}
+                      onClearMessages={handleClearMessages}
                       onValidate={validate}
                     />
                   </div>
