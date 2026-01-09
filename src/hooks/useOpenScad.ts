@@ -11,6 +11,7 @@ interface UseOpenScadResult {
   lintErrors: LintError[];
   logs: string[];
   render: (code: string) => void;
+  forceRender: (code: string) => void;
   validate: (code: string) => Promise<{ valid: boolean; errors: string[] }>;
 }
 
@@ -157,6 +158,7 @@ export function useOpenScad(autoRender: boolean = true, debounceMs: number = 100
     lintErrors,
     logs,
     render: autoRender ? debouncedRender : render,
+    forceRender: render,
     validate,
   };
 }
